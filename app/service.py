@@ -1025,11 +1025,13 @@ def build_selection_funnel(
     prior = all_accounts
     output = []
     for index, (name, predicate, reason) in enumerate(stages):
-        members = [account for account in prior if predicate(account)] if index else all_accounts
-        dropped = {}
-        for account in prior:
-            if account not in members:
-                dropped[reason] = dropped.get(reason, 0) + 1
+        if index:
+            members = [account for account in prior if predicate(account)]
+            dropped_count = len(prior) - len(members)
+            dropped = {reason: dropped_count} if dropped_count else {}
+        else:
+            members = all_accounts
+            dropped = {}
         output.append({"name": name, "count": len(members) if index else (eligible_accounts if eligible_accounts is not None else len(members)), "drop_reasons": dropped})
         prior = members
     return {"stages": output, "definition": "Each stage is evaluated against the accounts surviving the previous stage."}
@@ -1271,6 +1273,14 @@ def build_two_stage_payload(
         if "test" not in str(row.get("account_group", "")).lower()
         and "demo" not in str(row.get("account_group", "")).lower()
     ]
+    excluded_martingale_levels = tuple(excluded_martingale_levels)
+    excluded_martingale_level_set = set(excluded_martingale_levels)
+    martingale_indexed = (
+        martingale_snapshot.indexed_records()
+        if martingale_snapshot is not None
+        and getattr(martingale_snapshot, "status", "") in {"ready", "partial"}
+        else {}
+    )
     grouped: dict[tuple[str, int], list[dict[str, Any]]] = defaultdict(list)
     for row in materialized:
         grouped[(row["platform"], int(row["login"]))].append(row)
@@ -1355,8 +1365,8 @@ def build_two_stage_payload(
         is_personal_candidate = int(identity["login"]) in personal_logins
         is_news_candidate = int(identity["login"]) in news_logins
         martingale_record = None
-        if martingale_snapshot is not None and getattr(martingale_snapshot, "status", "") == "ready":
-            martingale_record = martingale_snapshot.indexed_records().get(
+        if martingale_snapshot is not None and getattr(martingale_snapshot, "status", "") in {"ready", "partial"}:
+            martingale_record = martingale_indexed.get(
                 (str(identity["platform"]), int(identity["login"]))
             )
         martingale_level = martingale_record.get("risk_level") if martingale_record else None
@@ -1371,7 +1381,7 @@ def build_two_stage_payload(
         )
         martingale_hard_block = (
             martingale_detection_status == "confirmed"
-            and martingale_level in set(excluded_martingale_levels)
+            and martingale_level in excluded_martingale_level_set
         )
         martingale_blocked = snapshot_unavailable or martingale_hard_block
         book = _final_book(

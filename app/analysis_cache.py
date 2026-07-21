@@ -14,7 +14,7 @@ from uuid import uuid4
 class AnalysisSession:
     signature: str
     payload: dict[str, Any]
-    daily_rows: list[dict[str, Any]]
+    daily_rows: list[dict[str, Any]] | None
     overview_daily_rows: list[dict[str, Any]] | None
     created_at: float
 

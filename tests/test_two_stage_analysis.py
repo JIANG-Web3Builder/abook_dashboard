@@ -3,7 +3,7 @@ from decimal import Decimal
 import json
 import math
 
-from app.service import _account_period_metrics, build_two_stage_payload
+from app.service import _account_period_metrics, build_selection_funnel, build_two_stage_payload
 
 
 def row(login, month, *, group="real\\FPlive", trades=0, wins=0, losses=0,
@@ -70,6 +70,49 @@ def daily_row(login, day, net, market=None, trades=1):
         "market_pnl": Decimal(str(market if market is not None else net)),
         "matched_trades": trades,
     }
+
+
+def test_two_stage_payload_indexes_martingale_snapshot_once_for_all_accounts():
+    class CountingSnapshot:
+        status = "ready"
+        missing_platforms = ()
+
+        def __init__(self):
+            self.index_calls = 0
+
+        def indexed_records(self):
+            self.index_calls += 1
+            return {}
+
+    snapshot = CountingSnapshot()
+    result = build_two_stage_payload(
+        [row(1, "05"), row(2, "05")],
+        martingale_snapshot=snapshot,
+        selection_start="2026-05-01", selection_end="2026-05-31",
+        validation_start="2026-07-01", validation_end="2026-07-02",
+        min_trades=0, min_win_rate=0, min_profit_factor=0, min_payoff_ratio=0,
+        max_top1_day_profit_contribution=2, min_direction_day_rate_lower_bound=0,
+        min_stability_score=0,
+    )
+
+    assert result["selection"]["counts"]["unique_accounts"] == 2
+    assert snapshot.index_calls == 1
+
+
+def test_selection_funnel_does_not_compare_full_account_dicts_for_membership():
+    class IdentityDict(dict):
+        def __eq__(self, other):
+            raise AssertionError("funnel must not compare full account dictionaries")
+
+    accounts = [
+        IdentityDict(selection={"trade_count": 10}, book="abook"),
+        IdentityDict(selection={"trade_count": 0}, book="bbook"),
+    ]
+
+    funnel = build_selection_funnel(accounts, min_trades=1, min_active_days=0)
+
+    assert funnel["stages"][1]["count"] == 1
+    assert funnel["stages"][1]["drop_reasons"] == {"insufficient_sample": 1}
 
 
 def test_two_stage_payload_builds_daily_book_series_and_merges_observation_into_bbook():

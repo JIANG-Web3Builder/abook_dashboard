@@ -59,6 +59,30 @@ def _fetch_daily_rows(
     return method(request, excluded_logins=excluded_logins)
 
 
+def _compact_population_account(account: dict) -> dict:
+    """Keep only fields the overview uses for its population summaries.
+
+    The full account objects stay in the server-side analysis session for the
+    lazy Book analytics endpoint.  Omitting diagnostic snapshot records from
+    the initial response avoids serializing the same large objects twice.
+    """
+    response_fields = (
+        "platform",
+        "login",
+        "account_group",
+        "book",
+        "selection_source",
+        "selection",
+        "validation",
+        "monthly",
+        "stability",
+        "risk_leverage_p95_ratio",
+        "martingale_blocked",
+        "martingale_risk_level",
+    )
+    return {key: account[key] for key in response_fields if key in account}
+
+
 def _store_analysis_session(
     request: AnalysisRequest,
     payload: dict,
@@ -70,13 +94,19 @@ def _store_analysis_session(
         AnalysisSession(
             signature=request_signature(request),
             payload=payload,
-            daily_rows=list(daily_rows or []),
+            daily_rows=None if daily_rows is None else list(daily_rows),
             overview_daily_rows=overview_daily_rows,
             created_at=time.monotonic(),
         )
     )
     payload["analysis_token"] = token
-    return payload
+    response_payload = dict(payload)
+    population_accounts = payload.get("population_accounts")
+    if isinstance(population_accounts, list):
+        response_payload["population_accounts"] = [
+            _compact_population_account(account) for account in population_accounts
+        ]
+    return response_payload
 
 
 @app.get("/api/health")
@@ -129,7 +159,6 @@ def analysis(request: AnalysisRequest, repository: ClickHouseRepository = Depend
             # Company-profit overview must remain population-level. Do not let
             # the Abook leverage rule remove users from the monthly baseline.
             overview_rows = repository.fetch_analysis(request)
-            overview_daily_rows = _fetch_daily_rows(repository, request)
         if personal_candidates_enabled or news_candidates_enabled:
             # Candidate lists are explicit Abook overrides. Keep the
             # normal platform/group/login/test-demo query boundaries, but do
@@ -167,17 +196,10 @@ def analysis(request: AnalysisRequest, repository: ClickHouseRepository = Depend
                 daily_rows=[],
                 overview_daily_rows=overview_daily_rows,
             )
-        if overview_daily_rows is not None:
-            daily_rows = overview_daily_rows
-        elif risk_filter.is_empty_for(request):
-            daily_rows = []
-        else:
-            excluded_logins = risk_filter.excluded_logins
-            daily_rows = (
-                _fetch_daily_rows(repository, effective_request, excluded_logins=excluded_logins)
-                if excluded_logins
-                else _fetch_daily_rows(repository, effective_request)
-            )
+        # Daily account rows are only needed by the lazy Book analytics tabs.
+        # Defer this query so the overview can render as soon as the account
+        # aggregates are available.
+        daily_rows = None
         rules = request.rules
         payload = build_two_stage_payload(
             routing_rows,
@@ -281,14 +303,24 @@ def book_analytics(
             analysis_payload = cached_session.payload
             daily_rows = cached_session.daily_rows
             overview_daily_rows = cached_session.overview_daily_rows
+            if daily_rows is None:
+                daily_rows = _fetch_daily_rows(repository, request.analysis)
+                overview_daily_rows = overview_daily_rows if overview_daily_rows is not None else daily_rows
         else:
             analysis_payload = analysis(request.analysis, repository)
             cached_session = analysis_session_cache.get(
                 analysis_payload.get("analysis_token"),
                 request_signature(request.analysis),
             )
-            daily_rows = cached_session.daily_rows if cached_session is not None else _fetch_daily_rows(repository, request.analysis)
-            overview_daily_rows = cached_session.overview_daily_rows if cached_session is not None else None
+            if cached_session is not None:
+                daily_rows = cached_session.daily_rows
+                overview_daily_rows = cached_session.overview_daily_rows
+                if daily_rows is None:
+                    daily_rows = _fetch_daily_rows(repository, request.analysis)
+                    overview_daily_rows = overview_daily_rows if overview_daily_rows is not None else daily_rows
+            else:
+                daily_rows = _fetch_daily_rows(repository, request.analysis)
+                overview_daily_rows = None
         population_accounts = analysis_payload.get("population_accounts")
         accounts = population_accounts if population_accounts is not None else analysis_payload.get("accounts", [])
         abook_keys = {
