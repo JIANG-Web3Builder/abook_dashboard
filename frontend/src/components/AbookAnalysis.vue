@@ -24,6 +24,13 @@ function phasePnl(account: AccountRow, phase: Phase): number {
   return amount(account[phase]?.client_net_pnl)
 }
 
+function phaseAmountValues(account: AccountRow, phase: Phase): number[] {
+  const monthly = (account.monthly || [])
+    .filter((item: any) => item.phase === phase)
+    .map((item: any) => amount(item.client_net_pnl))
+  return monthly.length ? monthly : [phasePnl(account, phase)]
+}
+
 function monthPnl(account: AccountRow, month: string): number {
   const row = (account.monthly || []).find((item: any) => item.month === month)
   return amount(row?.client_net_pnl)
@@ -31,8 +38,9 @@ function monthPnl(account: AccountRow, month: string): number {
 
 function phaseSummary(accounts: AccountRow[], phase: Phase) {
   const values = accounts.map(account => phasePnl(account, phase))
-  const totalProfit = values.filter(value => value > 0).reduce((sum, value) => sum + value, 0)
-  const totalLoss = values.filter(value => value < 0).reduce((sum, value) => sum + Math.abs(value), 0)
+  const amountValues = accounts.flatMap(account => phaseAmountValues(account, phase))
+  const totalProfit = amountValues.filter(value => value > 0).reduce((sum, value) => sum + value, 0)
+  const totalLoss = amountValues.filter(value => value < 0).reduce((sum, value) => sum + Math.abs(value), 0)
   const trades = accounts.reduce((sum, account) => sum + amount(account[phase]?.trade_count), 0)
   const wins = accounts.reduce((sum, account) => sum + amount(account[phase]?.winning_trades), 0)
   return {
@@ -40,6 +48,8 @@ function phaseSummary(accounts: AccountRow[], phase: Phase) {
     totalLoss,
     netPnl: totalProfit - totalLoss,
     accounts: accounts.length,
+    strictPositiveAccounts: values.filter(value => value > 0).length,
+    precision: values.length ? values.filter(value => value > 0).length / values.length : 0,
     activeAccounts: accounts.filter(account => amount(account[phase]?.trade_count) > 0).length,
     trades,
     winRate: trades > 0 ? wins / trades : 0,
@@ -48,13 +58,16 @@ function phaseSummary(accounts: AccountRow[], phase: Phase) {
 
 const abookAccounts = computed(() => (props.data.accounts || []).filter(account => account.book === 'abook'))
 const bbookAccounts = computed(() => (props.data.accounts || []).filter(account => account.book === 'bbook'))
+const populationAccounts = computed(() => props.data.population_accounts || props.data.accounts || [])
+const populationAbookAccounts = computed(() => populationAccounts.value.filter(account => account.book === 'abook'))
+const populationBbookAccounts = computed(() => populationAccounts.value.filter(account => account.book === 'bbook'))
 const summaries = computed(() => ({
-  selection: phaseSummary(abookAccounts.value, 'selection'),
-  validation: phaseSummary(abookAccounts.value, 'validation'),
+  selection: phaseSummary(populationAbookAccounts.value, 'selection'),
+  validation: phaseSummary(populationAbookAccounts.value, 'validation'),
 }))
 const bbookSummaries = computed(() => ({
-  selection: phaseSummary(bbookAccounts.value, 'selection'),
-  validation: phaseSummary(bbookAccounts.value, 'validation'),
+  selection: phaseSummary(populationBbookAccounts.value, 'selection'),
+  validation: phaseSummary(populationBbookAccounts.value, 'validation'),
 }))
 const leakage = computed(() => (props.data.misjudge?.bbook_profitable || []).filter((row: any) => amount(row.profit_amount) > 100))
 type AbookSortField = 'may' | 'june' | 'july' | 'selectionWinRate' | 'validationWinRate' | 'selectionTrades' | 'score'
@@ -124,6 +137,7 @@ function leakageAccount(row: any): AccountRow {
         <div class="list-row"><span>盈利金额</span><b class="positive">{{ format(summaries[phase].totalProfit) }}</b></div>
         <div class="list-row"><span>亏损金额</span><b class="negative">{{ format(-summaries[phase].totalLoss) }}</b></div>
         <div class="list-row"><span>净 P&amp;L</span><b :class="summaries[phase].netPnl >= 0 ? 'positive' : 'negative'">{{ format(summaries[phase].netPnl) }}</b></div>
+        <div v-if="phase === 'validation'" class="list-row"><span>严格 Precision（P&amp;L &gt; 0 / Abook 总人数）</span><b class="positive">{{ ratio(summaries[phase].precision) }}（{{ summaries[phase].strictPositiveAccounts }}/{{ summaries[phase].accounts }}）</b></div>
         <small>盈利金额 + 亏损金额 = 净 P&amp;L · {{ summaries[phase].activeAccounts }}/{{ summaries[phase].accounts }} 个活跃账户 · {{ summaries[phase].trades }} 笔交易</small>
       </article>
     </div>

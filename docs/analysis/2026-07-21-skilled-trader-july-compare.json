@@ -1,0 +1,93 @@
+{
+  "window": {
+    "selection": [
+      "2026-05-01",
+      "2026-06-30"
+    ],
+    "validation": [
+      "2026-07-01",
+      "2026-07-16"
+    ]
+  },
+  "legacy": {
+    "label": "legacy_july_tuned",
+    "abook_accounts": 46,
+    "validation_traded": 45,
+    "validation_profitable": 25,
+    "validation_losing": 13,
+    "continue_profit_rate": 0.5556,
+    "validation_client_net_pnl": 17423.93,
+    "validation_profit_factor": 1.2824084711749066,
+    "selection_client_net_pnl": 66368.36,
+    "rules_profile": "skilled_trader_medium",
+    "rules_snapshot": {
+      "min_trades": 75,
+      "min_active_days": 0,
+      "min_profit_factor": 1.25,
+      "min_payoff_ratio": 0.4,
+      "payoff_link_factor": 0.0,
+      "min_positive_month_rate": 0.0,
+      "max_top1_day_profit_contribution": 0.3,
+      "max_leverage_p95_ratio": 500.0,
+      "require_selection_monthly_positive": false,
+      "require_selection_net_positive": false
+    }
+  },
+  "skilled": {
+    "label": "skilled_trader",
+    "abook_accounts": 9,
+    "validation_traded": 8,
+    "validation_profitable": 6,
+    "validation_losing": 1,
+    "continue_profit_rate": 0.75,
+    "validation_client_net_pnl": 2482.22,
+    "validation_profit_factor": 1.5709688598097942,
+    "selection_client_net_pnl": 11602.93,
+    "rules_profile": "skilled_trader_medium",
+    "rules_snapshot": {
+      "min_trades": 100,
+      "min_active_days": 15,
+      "min_profit_factor": 1.4,
+      "min_payoff_ratio": 0.6,
+      "payoff_link_factor": 1.0,
+      "min_positive_month_rate": 0.8,
+      "max_top1_day_profit_contribution": 0.22,
+      "max_leverage_p95_ratio": 1500.0,
+      "require_selection_monthly_positive": false,
+      "require_selection_net_positive": true
+    }
+  },
+  "skilled_defaults": {
+    "min_trades": 100,
+    "min_active_days": 15,
+    "min_active_months": 2,
+    "min_win_rate": 0.35,
+    "min_profit_factor": 1.4,
+    "min_payoff_ratio": 0.6,
+    "payoff_link_factor": 1.0,
+    "min_avg_daily_profit": 0.0,
+    "min_avg_profit": 0.0,
+    "min_selection_monthly_consistency": 0.3,
+    "min_positive_month_rate": 0.8,
+    "max_top1_day_profit_contribution": 0.22,
+    "max_daily_profit_month_contribution": 0.5,
+    "max_leverage_p95_ratio": 1500.0,
+    "max_peak_leverage_ratio": 1500.0,
+    "max_high_leverage_holding_seconds": 60.0,
+    "min_direction_day_rate_lower_bound": 0.52,
+    "min_return_drawdown_ratio": 1.0,
+    "min_stability_score": 70.0,
+    "high_confidence_trades": 120,
+    "high_confidence_days": 30,
+    "excluded_martingale_levels": [
+      "extreme",
+      "high",
+      "medium",
+      "low"
+    ],
+    "require_selection_monthly_positive": false,
+    "require_selection_net_positive": true,
+    "enable_r4": false,
+    "r4_min_passing_weeks": 1
+  }
+}

@@ -157,6 +157,7 @@ def test_account_detail_query_keeps_open_close_fields_for_exposure_reconstructio
     assert "volume" in query
     assert "entry_deal_id" in query
     assert "exit_deal_id" in query
+    assert "turnover" in query
 
 
 def test_daily_pnl_query_aggregates_utc_deals_and_reuses_account_boundaries():

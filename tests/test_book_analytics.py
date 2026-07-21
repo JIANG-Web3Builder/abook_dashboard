@@ -88,6 +88,18 @@ def test_book_analytics_reports_period_profitability_and_distribution():
     assert {row["period"] for row in result["pnl_structure"]["abook"]["distribution_by_period"]} == {"2026-05", "2026-06", "selection_total", "2026-07"}
 
 
+def test_phase_loss_amount_keeps_losses_from_profitable_months_inside_a_positive_period():
+    accounts = [
+        _account(1, "abook", 100, 0, [_month("2026-05", -50), _month("2026-06", 150), _month("2026-07", 0)]),
+    ]
+
+    selection = build_book_analytics(_context(), accounts, {('mt5', 1)}, symbol_rows=[])["pnl_structure"]["abook"]["selection"]
+
+    assert selection["net_pnl"] == 100.0
+    assert selection["positive_pnl"] == 150.0
+    assert selection["negative_pnl"] == -50.0
+
+
 def test_book_analytics_reports_style_top_accounts_and_risk_without_turnover():
     accounts = [
         _account(1, "abook", 200, 120, [_month("2026-05", 80), _month("2026-06", 120), _month("2026-07", 120)]),

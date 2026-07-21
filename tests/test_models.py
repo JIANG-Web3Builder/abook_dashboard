@@ -32,9 +32,9 @@ def test_default_strategy_filters_match_july_tuned_profile_without_monthly_pnl_g
     assert request.rules.min_positive_month_rate == 0.5  # legacy field retained but ignored by routing
     assert request.rules.max_top1_day_profit_contribution == 0.3
     assert request.rules.max_daily_profit_month_contribution == 0.6
-    assert request.rules.max_leverage_p95_ratio == 500.0
-    assert request.rules.max_peak_leverage_ratio == 500.0
-    assert request.rules.max_high_leverage_holding_seconds == 60.0
+    assert request.rules.max_leverage_p95_ratio == 5000.0
+    assert request.rules.max_peak_leverage_ratio == 5000.0
+    assert request.rules.max_high_leverage_holding_seconds == 300.0
     assert request.rules.min_direction_day_rate_lower_bound == 0.55
     assert request.rules.min_stability_score == 70
     assert request.rules.min_win_rate == 0.5

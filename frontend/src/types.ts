@@ -99,6 +99,7 @@ export interface AccountDetailPayload {
 }
 
 export interface AnalysisPayload {
+  analysis_token?: string
   selection?: { counts: Record<string, number>; groups: Record<string, unknown> }
   validation?: { groups: Record<string, any>; diagnostics: Record<string, any> }
   coverage?: Record<string, any>
@@ -109,6 +110,7 @@ export interface AnalysisPayload {
   funnel?: { stages: Array<{ name: string; count: number; drop_reasons: Record<string, number> }> }
   martingale?: Record<string, any>
   accounts?: AccountRow[]
+  population_accounts?: AccountRow[]
   daily_book_series?: any[]
   avg_profit?: Record<string, any>
   [key: string]: any

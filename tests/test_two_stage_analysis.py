@@ -239,6 +239,32 @@ def test_two_stage_analysis_reports_transition_precision_lift_and_abook_delta():
     json.dumps(result, allow_nan=False)
 
 
+def test_two_stage_payload_preserves_zero_pnl_population_for_strict_abook_precision():
+    rows = [
+        row(101, "05", trades=2, wins=2, losses=0, market=20, net=20,
+            gross_wins=20, active_days=1, daily_sum=20),
+        row(101, "07", trades=1, wins=1, losses=0, market=5, net=5,
+            gross_wins=5, active_days=1, daily_sum=5),
+        row(102, "05"),
+    ]
+
+    result = build_two_stage_payload(
+        rows,
+        selection_start="2026-05-01", selection_end="2026-06-30",
+        validation_start="2026-07-01", validation_end="2026-07-13",
+        min_trades=0, min_win_rate=0, min_profit_factor=0, min_payoff_ratio=0,
+        max_top1_day_profit_contribution=2, min_direction_day_rate_lower_bound=0,
+        min_stability_score=0, personal_candidate_logins={102},
+    )
+
+    population_abook = [account for account in result["population_accounts"] if account["book"] == "abook"]
+    display_abook = [account for account in result["accounts"] if account["book"] == "abook"]
+    assert len(population_abook) == 2
+    assert len(display_abook) == 1
+    assert result["validation"]["groups"]["abook"]["strict_positive_accounts"] == 1
+    assert result["validation"]["groups"]["abook"]["strict_positive_account_rate"] == 0.5
+
+
 def test_two_stage_analysis_requires_win_rate_monthly_consistency_and_risk_concentration():
     strong = [
         row(21, "05", trades=20, wins=14, losses=6, market=120, net=100,

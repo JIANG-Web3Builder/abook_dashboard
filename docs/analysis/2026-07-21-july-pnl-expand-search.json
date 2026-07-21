@@ -1,0 +1,293 @@
+{
+  "evaluated": 35440,
+  "best": {
+    "july_abook_net_pnl": 91732.58,
+    "abook_accounts": 484,
+    "abook_positive": 185,
+    "abook_negative": 185,
+    "rules": {
+      "min_trades": 60,
+      "min_win_rate": 0.52,
+      "min_profit_factor": 1.8,
+      "min_payoff_ratio": 0.8,
+      "max_top1_day_profit_contribution": 0.6,
+      "max_leverage_p95_ratio": 5000.0,
+      "max_high_leverage_holding_seconds": 86400.0,
+      "enable_r4": true,
+      "r4_min_passing_weeks": 1,
+      "excluded_martingale_levels": [
+        "extreme",
+        "high",
+        "medium"
+      ],
+      "personal_candidate_list": false,
+      "news_candidate_list": true
+    }
+  },
+  "over_20k_count": 3244,
+  "over_20k_top10": [
+    {
+      "july_abook_net_pnl": 91732.58,
+      "abook_accounts": 484,
+      "abook_positive": 185,
+      "abook_negative": 185,
+      "rules": {
+        "min_trades": 60,
+        "min_win_rate": 0.52,
+        "min_profit_factor": 1.8,
+        "min_payoff_ratio": 0.8,
+        "max_top1_day_profit_contribution": 0.6,
+        "max_leverage_p95_ratio": 5000.0,
+        "max_high_leverage_holding_seconds": 86400.0,
+        "enable_r4": true,
+        "r4_min_passing_weeks": 1,
+        "excluded_martingale_levels": [
+          "extreme",
+          "high",
+          "medium"
+        ],
+        "personal_candidate_list": false,
+        "news_candidate_list": true
+      }
+    },
+    {
+      "july_abook_net_pnl": 91732.58,
+      "abook_accounts": 484,
+      "abook_positive": 185,
+      "abook_negative": 185,
+      "rules": {
+        "min_trades": 60,
+        "min_win_rate": 0.52,
+        "min_profit_factor": 1.8,
+        "min_payoff_ratio": 0.8,
+        "max_top1_day_profit_contribution": 0.6,
+        "max_leverage_p95_ratio": 8000.0,
+        "max_high_leverage_holding_seconds": 86400.0,
+        "enable_r4": true,
+        "r4_min_passing_weeks": 1,
+        "excluded_martingale_levels": [
+          "extreme",
+          "high",
+          "medium"
+        ],
+        "personal_candidate_list": false,
+        "news_candidate_list": true
+      }
+    },
+    {
+      "july_abook_net_pnl": 91687.07,
+      "abook_accounts": 482,
+      "abook_positive": 184,
+      "abook_negative": 184,
+      "rules": {
+        "min_trades": 65,
+        "min_win_rate": 0.52,
+        "min_profit_factor": 1.8,
+        "min_payoff_ratio": 0.8,
+        "max_top1_day_profit_contribution": 0.6,
+        "max_leverage_p95_ratio": 5000.0,
+        "max_high_leverage_holding_seconds": 86400.0,
+        "enable_r4": true,
+        "r4_min_passing_weeks": 1,
+        "excluded_martingale_levels": [
+          "extreme",
+          "high",
+          "medium"
+        ],
+        "personal_candidate_list": false,
+        "news_candidate_list": true
+      }
+    },
+    {
+      "july_abook_net_pnl": 91653.72,
+      "abook_accounts": 486,
+      "abook_positive": 186,
+      "abook_negative": 186,
+      "rules": {
+        "min_trades": 60,
+        "min_win_rate": 0.52,
+        "min_profit_factor": 1.8,
+        "min_payoff_ratio": 0.8,
+        "max_top1_day_profit_contribution": 0.6,
+        "max_leverage_p95_ratio": 10000.0,
+        "max_high_leverage_holding_seconds": 86400.0,
+        "enable_r4": true,
+        "r4_min_passing_weeks": 1,
+        "excluded_martingale_levels": [
+          "extreme",
+          "high",
+          "medium"
+        ],
+        "personal_candidate_list": false,
+        "news_candidate_list": true
+      }
+    },
+    {
+      "july_abook_net_pnl": 91653.72,
+      "abook_accounts": 486,
+      "abook_positive": 186,
+      "abook_negative": 186,
+      "rules": {
+        "min_trades": 60,
+        "min_win_rate": 0.52,
+        "min_profit_factor": 1.8,
+        "min_payoff_ratio": 0.8,
+        "max_top1_day_profit_contribution": 0.6,
+        "max_leverage_p95_ratio": 20000.0,
+        "max_high_leverage_holding_seconds": 86400.0,
+        "enable_r4": true,
+        "r4_min_passing_weeks": 1,
+        "excluded_martingale_levels": [
+          "extreme",
+          "high",
+          "medium"
+        ],
+        "personal_candidate_list": false,
+        "news_candidate_list": true
+      }
+    },
+    {
+      "july_abook_net_pnl": 91608.21,
+      "abook_accounts": 484,
+      "abook_positive": 185,
+      "abook_negative": 185,
+      "rules": {
+        "min_trades": 65,
+        "min_win_rate": 0.52,
+        "min_profit_factor": 1.8,
+        "min_payoff_ratio": 0.8,
+        "max_top1_day_profit_contribution": 0.6,
+        "max_leverage_p95_ratio": 10000.0,
+        "max_high_leverage_holding_seconds": 86400.0,
+        "enable_r4": true,
+        "r4_min_passing_weeks": 1,
+        "excluded_martingale_levels": [
+          "extreme",
+          "high",
+          "medium"
+        ],
+        "personal_candidate_list": false,
+        "news_candidate_list": true
+      }
+    },
+    {
+      "july_abook_net_pnl": 91437.66,
+      "abook_accounts": 474,
+      "abook_positive": 181,
+      "abook_negative": 181,
+      "rules": {
+        "min_trades": 70,
+        "min_win_rate": 0.52,
+        "min_profit_factor": 1.8,
+        "min_payoff_ratio": 0.8,
+        "max_top1_day_profit_contribution": 0.6,
+        "max_leverage_p95_ratio": 5000.0,
+        "max_high_leverage_holding_seconds": 86400.0,
+        "enable_r4": true,
+        "r4_min_passing_weeks": 1,
+        "excluded_martingale_levels": [
+          "extreme",
+          "high",
+          "medium"
+        ],
+        "personal_candidate_list": false,
+        "news_candidate_list": true
+      }
+    },
+    {
+      "july_abook_net_pnl": 91429.51,
+      "abook_accounts": 475,
+      "abook_positive": 182,
+      "abook_negative": 184,
+      "rules": {
+        "min_trades": 60,
+        "min_win_rate": 0.52,
+        "min_profit_factor": 1.8,
+        "min_payoff_ratio": 0.8,
+        "max_top1_day_profit_contribution": 0.5,
+        "max_leverage_p95_ratio": 5000.0,
+        "max_high_leverage_holding_seconds": 86400.0,
+        "enable_r4": true,
+        "r4_min_passing_weeks": 1,
+        "excluded_martingale_levels": [
+          "extreme",
+          "high",
+          "medium"
+        ],
+        "personal_candidate_list": false,
+        "news_candidate_list": true
+      }
+    },
+    {
+      "july_abook_net_pnl": 91408.53,
+      "abook_accounts": 494,
+      "abook_positive": 189,
+      "abook_negative": 188,
+      "rules": {
+        "min_trades": 60,
+        "min_win_rate": 0.52,
+        "min_profit_factor": 1.8,
+        "min_payoff_ratio": 0.5,
+        "max_top1_day_profit_contribution": 0.6,
+        "max_leverage_p95_ratio": 5000.0,
+        "max_high_leverage_holding_seconds": 86400.0,
+        "enable_r4": true,
+        "r4_min_passing_weeks": 1,
+        "excluded_martingale_levels": [
+          "extreme",
+          "high",
+          "medium"
+        ],
+        "personal_candidate_list": false,
+        "news_candidate_list": true
+      }
+    },
+    {
+      "july_abook_net_pnl": 91408.53,
+      "abook_accounts": 494,
+      "abook_positive": 189,
+      "abook_negative": 188,
+      "rules": {
+        "min_trades": 60,
+        "min_win_rate": 0.52,
+        "min_profit_factor": 1.8,
+        "min_payoff_ratio": 0.5,
+        "max_top1_day_profit_contribution": 0.6,
+        "max_leverage_p95_ratio": 8000.0,
+        "max_high_leverage_holding_seconds": 86400.0,
+        "enable_r4": true,
+        "r4_min_passing_weeks": 1,
+        "excluded_martingale_levels": [
+          "extreme",
+          "high",
+          "medium"
+        ],
+        "personal_candidate_list": false,
+        "news_candidate_list": true
+      }
+    }
+  ],
+  "target": 20000,
+  "verified": {
+    "abook_accounts": 374,
+    "july_abook_net_pnl": 26292.99,
+    "rules": {
+      "min_trades": 60,
+      "min_win_rate": 0.52,
+      "min_profit_factor": 1.8,
+      "min_payoff_ratio": 0.8,
+      "max_top1_day_profit_contribution": 0.6,
+      "max_leverage_p95_ratio": 5000.0,
+      "max_high_leverage_holding_seconds": 86400.0,
+      "enable_r4": true,
+      "r4_min_passing_weeks": 1,
+      "excluded_martingale_levels": [
+        "extreme",
+        "high",
+        "medium"
+      ],
+      "personal_candidate_list": false,
+      "news_candidate_list": true
+    }
+  }
+}

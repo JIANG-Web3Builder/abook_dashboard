@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import time
 from typing import Optional
 
 from fastapi import Body, Depends, FastAPI, HTTPException
@@ -8,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
+from .analysis_cache import AnalysisSession, analysis_session_cache, request_signature
 from .martingale import build_martingale_filter, load_martingale_snapshot, snapshot_path
 from .avg_profit import build_avg_profit_filter
 from .book_analytics import build_book_analytics
@@ -55,6 +57,26 @@ def _fetch_daily_rows(
     if not callable(method):
         return []
     return method(request, excluded_logins=excluded_logins)
+
+
+def _store_analysis_session(
+    request: AnalysisRequest,
+    payload: dict,
+    *,
+    daily_rows: list[dict] | None,
+    overview_daily_rows: list[dict] | None,
+) -> dict:
+    token = analysis_session_cache.put(
+        AnalysisSession(
+            signature=request_signature(request),
+            payload=payload,
+            daily_rows=list(daily_rows or []),
+            overview_daily_rows=overview_daily_rows,
+            created_at=time.monotonic(),
+        )
+    )
+    payload["analysis_token"] = token
+    return payload
 
 
 @app.get("/api/health")
@@ -139,7 +161,12 @@ def analysis(request: AnalysisRequest, repository: ClickHouseRepository = Depend
             payload["risk_management"] = risk_filter.summary()
             payload["martingale"] = martingale_snapshot.summary(request.rules.excluded_martingale_levels)
             payload["avg_profit"] = avg_profit_snapshot.summary()
-            return payload
+            return _store_analysis_session(
+                request,
+                payload,
+                daily_rows=[],
+                overview_daily_rows=overview_daily_rows,
+            )
         if overview_daily_rows is not None:
             daily_rows = overview_daily_rows
         elif risk_filter.is_empty_for(request):
@@ -201,7 +228,12 @@ def analysis(request: AnalysisRequest, repository: ClickHouseRepository = Depend
         }
         payload["martingale"] = martingale_snapshot.summary(request.rules.excluded_martingale_levels)
         payload["avg_profit"] = avg_profit_snapshot.summary()
-        return payload
+        return _store_analysis_session(
+            request,
+            payload,
+            daily_rows=daily_rows,
+            overview_daily_rows=overview_daily_rows,
+        )
     except RepositoryConfigurationError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as exc:
@@ -241,23 +273,43 @@ def book_analytics(
     repository: ClickHouseRepository = Depends(get_repository),
 ) -> dict:
     try:
-        analysis_payload = analysis(request.analysis, repository)
-        accounts = analysis_payload.get("accounts", [])
+        cached_session = analysis_session_cache.get(
+            request.analysis_token,
+            request_signature(request.analysis),
+        )
+        if cached_session is not None:
+            analysis_payload = cached_session.payload
+            daily_rows = cached_session.daily_rows
+            overview_daily_rows = cached_session.overview_daily_rows
+        else:
+            analysis_payload = analysis(request.analysis, repository)
+            cached_session = analysis_session_cache.get(
+                analysis_payload.get("analysis_token"),
+                request_signature(request.analysis),
+            )
+            daily_rows = cached_session.daily_rows if cached_session is not None else _fetch_daily_rows(repository, request.analysis)
+            overview_daily_rows = cached_session.overview_daily_rows if cached_session is not None else None
+        population_accounts = analysis_payload.get("population_accounts")
+        accounts = population_accounts if population_accounts is not None else analysis_payload.get("accounts", [])
         abook_keys = {
             (str(account["platform"]), int(account["login"]))
             for account in accounts
             if account.get("book") == "abook"
         }
-        if request.abook_accounts:
+        if request.abook_accounts and population_accounts is None:
             abook_keys = {(item.platform, int(item.login)) for item in request.abook_accounts}
-        daily_rows = _fetch_daily_rows(repository, request.analysis)
         symbol_method = getattr(repository, "fetch_book_symbol_rows", None)
-        symbol_rows = {
-            "population": symbol_method(request.analysis) if callable(symbol_method) else [],
-            "abook": symbol_method(request.analysis, account_keys=abook_keys) if callable(symbol_method) else [],
-        }
+        if request.include_symbols and callable(symbol_method):
+            symbol_rows = {
+                "population": symbol_method(request.analysis),
+                "abook": symbol_method(request.analysis, account_keys=abook_keys),
+            }
+        else:
+            symbol_rows = {"population": [], "abook": []}
         context = prepare_analysis_context(
-            [], daily_rows=daily_rows, overview_daily_rows=daily_rows,
+            [],
+            daily_rows=daily_rows,
+            overview_daily_rows=overview_daily_rows if overview_daily_rows is not None else daily_rows,
             selection_start=request.analysis.selection.start.isoformat(),
             selection_end=request.analysis.selection.end.isoformat(),
             validation_start=request.analysis.validation.start.isoformat(),

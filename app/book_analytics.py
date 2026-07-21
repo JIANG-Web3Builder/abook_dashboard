@@ -106,8 +106,17 @@ def _leverage_histogram(values: Iterable[float]) -> dict[str, list[Any]]:
     return {"labels": [label for label, _, _ in LEVERAGE_BUCKETS], "counts": counts}
 
 
-def _phase_metrics(metrics: list[dict[str, Any]], phase: str, book: str) -> dict[str, Any]:
+def _phase_metrics(
+    metrics: list[dict[str, Any]],
+    phase: str,
+    book: str,
+    amount_metrics: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     values = [_metric_value(metric, "client_net_pnl") for metric in metrics]
+    amount_values = [
+        _metric_value(metric, "client_net_pnl")
+        for metric in (amount_metrics if amount_metrics is not None else metrics)
+    ]
     profitable = [value for value in values if value > NEUTRAL_BAND]
     losses = [value for value in values if value < -NEUTRAL_BAND]
     neutral = [value for value in values if -NEUTRAL_BAND <= value <= NEUTRAL_BAND]
@@ -119,8 +128,11 @@ def _phase_metrics(metrics: list[dict[str, Any]], phase: str, book: str) -> dict
     negative_days = sum(int(_metric_value(metric, "daily_negative_days", _metric_value(metric, "negative_profit_days"))) for metric in metrics)
     flat_days = sum(int(_metric_value(metric, "daily_flat_days", _metric_value(metric, "flat_profit_days"))) for metric in metrics)
     net_pnl = round(sum(values), 6)
-    positive_pnl = round(sum(value for value in values if value > 0), 6)
-    negative_pnl = round(sum(value for value in values if value < 0), 6)
+    # Account-level ``values`` drive account counts and net P&L. Amounts are
+    # decomposed by the underlying month rows when available, so a May loss
+    # is not hidden by a larger June profit from the same account.
+    positive_pnl = round(sum(value for value in amount_values if value > 0), 6)
+    negative_pnl = round(sum(value for value in amount_values if value < 0), 6)
     return {
         "phase": phase,
         "accounts": len(metrics),
@@ -255,6 +267,15 @@ def _metric_for_period(account: dict[str, Any], phase: str, month: str | None = 
     return {"month": month, "phase": phase, "client_net_pnl": 0.0, "trade_count": 0}
 
 
+def _phase_amount_metrics(accounts: list[dict[str, Any]], phase: str) -> list[dict[str, Any]]:
+    """Return monthly P&L rows for gross phase amount presentation."""
+    result: list[dict[str, Any]] = []
+    for account in accounts:
+        monthly = [row for row in account.get("monthly", []) if row.get("phase") == phase]
+        result.extend(monthly or [dict(account.get(phase, {}))])
+    return result
+
+
 def _pnl_distribution(metrics: list[dict[str, Any]]) -> list[dict[str, Any]]:
     values = [_metric_value(metric, "client_net_pnl") for metric in metrics]
     result = []
@@ -369,13 +390,26 @@ def build_book_analytics(
     risk_exposure: dict[str, Any] = {}
     for book, items in books.items():
         daily_series = _daily_series(context, items, book)
-        phase_metrics = {phase: _phase_metrics([_metric_for_period(account, phase) for account in items], phase, book) for phase in ("selection", "validation")}
+        phase_metrics = {
+            phase: _phase_metrics(
+                [_metric_for_period(account, phase) for account in items],
+                phase,
+                book,
+                amount_metrics=_phase_amount_metrics(items, phase),
+            )
+            for phase in ("selection", "validation")
+        }
         monthly = []
         periods = [(month, "selection", month) for month in selection_months] + [("selection_total", "selection", None)] + [(month, "validation", month) for month in validation_months]
         distribution_by_period = []
         for label, phase, month in periods:
             metrics = [_metric_for_period(account, phase, month) for account in items]
-            summary = _phase_metrics(metrics, phase, book)
+            summary = _phase_metrics(
+                metrics,
+                phase,
+                book,
+                amount_metrics=_phase_amount_metrics(items, phase) if month is None else None,
+            )
             monthly.append({"month": label, "phase": phase, **{key: value for key, value in summary.items() if key != "phase"}})
             distribution_by_period.extend({"period": label, **row} for row in _pnl_distribution(metrics))
         phase_daily = {phase: [row for row in daily_series if row["phase"] == phase] for phase in ("selection", "validation")}

@@ -56,10 +56,10 @@ class AnalysisRules(BaseModel):
     min_positive_month_rate: float = Field(default=0.5, ge=0, le=1)
     max_top1_day_profit_contribution: float = Field(default=0.3, gt=0, le=1)
     max_daily_profit_month_contribution: float = Field(default=0.6, gt=0, le=1)
-    max_leverage_p95_ratio: float = Field(default=500.0, gt=0)
+    max_leverage_p95_ratio: float = Field(default=5000.0, gt=0)
     # Kept for old clients; service decisions use max_leverage_p95_ratio.
-    max_peak_leverage_ratio: float = Field(default=500.0, gt=0)
-    max_high_leverage_holding_seconds: float = Field(default=60.0, ge=0)
+    max_peak_leverage_ratio: float = Field(default=5000.0, gt=0)
+    max_high_leverage_holding_seconds: float = Field(default=300.0, ge=0)
     min_direction_day_rate_lower_bound: float = Field(default=0.55, ge=0, le=1)
     min_stability_score: float = Field(default=70.0, ge=0, le=100)
     high_confidence_trades: int = Field(default=100, ge=0)
@@ -147,3 +147,5 @@ class BookAnalyticsRequest(BaseModel):
 
     analysis: AnalysisRequest
     abook_accounts: List[AccountKey] = Field(default_factory=list)
+    analysis_token: Optional[str] = None
+    include_symbols: bool = True

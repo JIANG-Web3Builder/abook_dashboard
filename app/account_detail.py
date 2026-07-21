@@ -137,19 +137,25 @@ def _direction_sign(row: dict[str, Any]) -> int:
     return 1 if str(row.get("direction") or "").strip().lower() in {"buy", "long", "0"} else -1
 
 
-def _matched_trade_tape(rows: list[dict[str, Any]]) -> tuple[list[int], list[float]]:
-    prints: list[tuple[int, int, float]] = []
+def _matched_trade_tape(rows: list[dict[str, Any]]) -> dict[str, tuple[list[int], list[float]]]:
+    prints_by_symbol: dict[str, list[tuple[int, int, float]]] = defaultdict(list)
     for index, row in enumerate(rows):
+        symbol = str(row.get("symbol") or "")
         entry_time = _timestamp_ms(row.get("entry_time"))
         exit_time = _timestamp_ms(row.get("exit_time"))
         entry_price = _number(row.get("entry_price"))
         exit_price = _number(row.get("exit_price"))
         if entry_time is not None and entry_price > 0:
-            prints.append((entry_time, index, entry_price))
+            prints_by_symbol[symbol].append((entry_time, index, entry_price))
         if exit_time is not None and exit_price > 0:
-            prints.append((exit_time, index, exit_price))
-    prints.sort(key=lambda item: item[0])
-    return [item[0] for item in prints], [item[2] for item in prints]
+            prints_by_symbol[symbol].append((exit_time, index, exit_price))
+    return {
+        symbol: (
+            [item[0] for item in sorted(prints, key=lambda item: (item[0], item[1]))],
+            [item[2] for item in sorted(prints, key=lambda item: (item[0], item[1]))],
+        )
+        for symbol, prints in prints_by_symbol.items()
+    }
 
 
 def _price_at_or_before(times: list[int], prices: list[float], target_ms: int) -> float | None:
@@ -168,31 +174,48 @@ def _markout_value(row: dict[str, Any], kind: str, reference_price: float | None
     return value if math.isfinite(value) else None
 
 
+def _markout_weight(row: dict[str, Any]) -> float:
+    """Return the trade's nominal turnover weight, with a local fallback."""
+    turnover = abs(_number(row.get("turnover")))
+    if turnover > 0 and math.isfinite(turnover):
+        return turnover
+    return abs(_number(row.get("entry_price")) * _number(row.get("volume")))
+
+
 def summarize_markout_rows(rows: Iterable[dict[str, Any]]) -> dict[str, Any]:
-    """Calculate a simple matched-trade markout curve without tick data."""
+    """Calculate turnover-weighted matched-trade markout without tick data."""
     result: dict[str, Any] = {}
     materialized = [row for row in rows if row.get("entry_time") or row.get("exit_time")]
-    times, prices = _matched_trade_tape(materialized)
-    if not materialized or not times:
+    tapes = _matched_trade_tape(materialized)
+    if not materialized or not tapes:
         return result
     for kind in ("entry", "exit"):
         curve = []
         for offset_ms in _MARKOUT_OFFSETS_MS:
-            values: list[float] = []
+            weighted_sum = 0.0
+            weight_total = 0.0
+            sample_count = 0
             for row in materialized:
                 event_time = _timestamp_ms(row.get("entry_time" if kind == "entry" else "exit_time"))
                 if event_time is None:
                     continue
-                reference = _price_at_or_before(times, prices, event_time + offset_ms)
-                value = _markout_value(row, kind, reference)
-                if value is None:
+                tape = tapes.get(str(row.get("symbol") or ""))
+                if tape is None:
                     continue
-                values.append(value)
-            mean_bps = sum(values) / len(values) if values else None
+                reference = _price_at_or_before(tape[0], tape[1], event_time + offset_ms)
+                value = _markout_value(row, kind, reference)
+                weight = _markout_weight(row)
+                if value is None or weight <= 0 or not math.isfinite(weight):
+                    continue
+                weighted_sum += value * weight
+                weight_total += weight
+                sample_count += 1
+            mean_bps = weighted_sum / weight_total if weight_total else None
             curve.append({
                 "offset_ms": offset_ms,
                 "mean_bps": round(mean_bps, 6) if mean_bps is not None else None,
-                "sample_count": len(values),
+                "sample_count": sample_count,
+                "nominal_turnover": round(weight_total, 6),
             })
 
         primary = next((point for point in curve if point["offset_ms"] == 1000), None)
@@ -204,5 +227,6 @@ def summarize_markout_rows(rows: Iterable[dict[str, Any]]) -> dict[str, Any]:
             "mean_5s_bps": five_second["mean_bps"] if five_second else None,
             "curve": curve,
             "sample_count": sample_count,
+            "weighting": "abs(turnover) weighted; entry_price × volume fallback",
         }
     return result

@@ -789,6 +789,7 @@ def _group_summary(accounts: list[dict[str, Any]], target: Optional[str] = None)
     validation_values = [Decimal(str(account["validation"]["client_net_pnl"])) for account in accounts]
     positive = sum(1 for value in validation_values if value > NEUTRAL_BAND_USD)
     negative = sum(1 for value in validation_values if value < -NEUTRAL_BAND_USD)
+    strict_positive = sum(1 for value in validation_values if value > ZERO)
     total_trades = sum(account["validation"]["trade_count"] for account in accounts)
     total_wins = sum(account["validation"]["winning_trades"] for account in accounts)
     total_days = sum(account["validation"]["active_trade_days"] for account in accounts)
@@ -822,6 +823,8 @@ def _group_summary(accounts: list[dict[str, Any]], target: Optional[str] = None)
         "negative_accounts": negative,
         "positive_account_rate": _safe_ratio(Decimal(positive), Decimal(total)),
         "negative_account_rate": _safe_ratio(Decimal(negative), Decimal(total)),
+        "strict_positive_accounts": strict_positive,
+        "strict_positive_account_rate": _safe_ratio(Decimal(strict_positive), Decimal(total)),
         "active_positive_account_rate": _safe_ratio(Decimal(positive), Decimal(len(active))),
         "active_negative_account_rate": _safe_ratio(Decimal(negative), Decimal(len(active))),
         "matched_trades": total_trades,
@@ -1228,9 +1231,9 @@ def build_two_stage_payload(
     min_positive_month_rate: float = 0.5,
     max_top1_day_profit_contribution: float = 0.3,
     max_daily_profit_month_contribution: float = 1.0,
-    max_leverage_p95_ratio: float = 500.0,
+    max_leverage_p95_ratio: float = 5000.0,
     max_peak_leverage_ratio: float | None = None,
-    max_high_leverage_holding_seconds: float = 60.0,
+    max_high_leverage_holding_seconds: float = 300.0,
     risk_snapshot_status: str = "not_loaded",
     min_direction_day_rate_lower_bound: float = 0.55,
     min_stability_score: float = 70.0,
@@ -1248,7 +1251,7 @@ def build_two_stage_payload(
     r4_min_passing_weeks: int = 1,
 ) -> dict[str, Any]:
     """Build final Abook/Bbook routing and an independent validation-period readout."""
-    if max_peak_leverage_ratio is not None and max_leverage_p95_ratio == 500.0:
+    if max_peak_leverage_ratio is not None and max_leverage_p95_ratio == 5000.0:
         max_leverage_p95_ratio = max_peak_leverage_ratio
     materialized = list(rows)
     # This is a hard safety boundary. The query already applies the same
@@ -1851,5 +1854,6 @@ def build_two_stage_payload(
         "misjudge": misjudge_summary,
         "funnel": funnel,
         "personal_candidate_impact": personal_candidate_impact,
+        "population_accounts": accounts,
         "accounts": [account for account in accounts if account["has_nonzero_pnl"]],
     }

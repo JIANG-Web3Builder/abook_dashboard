@@ -14,7 +14,7 @@ const defaultRules: Record<string, number | string[] | boolean> = {
   min_trades: 75, min_win_rate: 0.5, min_profit_factor: 1.25,
   min_payoff_ratio: 0.4,
   max_top1_day_profit_contribution: 0.3,
-  max_leverage_p95_ratio: 500, max_high_leverage_holding_seconds: 60,
+  max_leverage_p95_ratio: 5000, max_high_leverage_holding_seconds: 300,
   high_confidence_trades: 100, high_confidence_days: 30,
   enable_r4: false, r4_min_passing_weeks: 1,
   excluded_martingale_levels: ['extreme', 'high', 'medium', 'low'],
@@ -27,6 +27,7 @@ const data = ref<AnalysisPayload>({ accounts: [] })
 const activeTab = ref<Tab>('overview')
 const loading = ref(false)
 const bookLoading = ref(false)
+const bookSymbolsLoaded = ref(false)
 const refreshing = ref(false)
 const refreshMessage = ref('')
 const error = ref('')
@@ -40,7 +41,7 @@ let detailRequestId = 0
 
 async function loadAnalysis(options: { preserveAccount?: boolean } = { preserveAccount: true }) {
   const accountBeforeRefresh = selectedAccount.value
-  loading.value = true; error.value = ''; bookData.value = null
+  loading.value = true; error.value = ''; bookData.value = null; bookSymbolsLoaded.value = false
   if (!options.preserveAccount) {
     closeAccount()
   }
@@ -90,9 +91,19 @@ async function refreshAllSnapshots() {
   }
 }
 async function loadBook() {
-  if (bookData.value || bookLoading.value || activeTab.value === 'overview') return
+  const includeSymbols = activeTab.value === 'users'
+  if ((bookData.value && (!includeSymbols || bookSymbolsLoaded.value)) || bookLoading.value || activeTab.value === 'overview') return
   bookLoading.value = true
-  try { bookData.value = await fetchBookAnalytics(request.value, (data.value.accounts || []).filter(a => a.book === 'abook').map(a => ({ platform: a.platform, login: a.login }))) } catch (err) { error.value = err instanceof Error ? err.message : String(err) } finally { bookLoading.value = false }
+  const population = data.value.population_accounts || data.value.accounts || []
+  try {
+    bookData.value = await fetchBookAnalytics(
+      request.value,
+      population.filter(a => a.book === 'abook').map(a => ({ platform: a.platform, login: a.login })),
+      data.value.analysis_token,
+      includeSymbols,
+    )
+    bookSymbolsLoaded.value = includeSymbols
+  } catch (err) { error.value = err instanceof Error ? err.message : String(err) } finally { bookLoading.value = false }
 }
 async function downloadExport() {
   const response = await exportAbook(request.value)

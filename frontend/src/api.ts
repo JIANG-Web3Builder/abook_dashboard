@@ -1,11 +1,24 @@
 import type { AccountDetailPayload, AccountRow, AnalysisPayload, BookAnalyticsPayload, RequestModel, SnapshotRefreshResponse } from './types'
 
+async function readJsonResponse<T>(response: Response, path: string): Promise<T> {
+  const text = await response.text()
+  if (!text.trim()) {
+    throw new Error(`Empty JSON response from ${path} (HTTP ${response.status})`)
+  }
+  try {
+    return JSON.parse(text) as T
+  } catch (error) {
+    const detail = error instanceof Error ? `: ${error.message}` : ''
+    throw new Error(`Invalid JSON response from ${path} (HTTP ${response.status})${detail}`)
+  }
+}
+
 export async function postJson<T>(path: string, body: unknown): Promise<T> {
   const response = await fetch(path, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
   })
   if (!response.ok) throw new Error(await response.text() || `HTTP ${response.status}`)
-  return response.json() as Promise<T>
+  return readJsonResponse<T>(response, path)
 }
 
 export function fetchAnalysis(request: RequestModel) {
@@ -19,8 +32,8 @@ export function refreshSnapshots(request: RequestModel) {
   })
 }
 
-export function fetchBookAnalytics(request: RequestModel, accounts: Array<{ platform: string; login: number }>) {
-  return postJson<BookAnalyticsPayload>('/api/abook/book-analytics', { analysis: request, abook_accounts: accounts })
+export function fetchBookAnalytics(request: RequestModel, accounts: Array<{ platform: string; login: number }>, analysisToken?: string, includeSymbols = true) {
+  return postJson<BookAnalyticsPayload>('/api/abook/book-analytics', { analysis: request, abook_accounts: accounts, analysis_token: analysisToken, include_symbols: includeSymbols })
 }
 
 export async function fetchAccountDetail(account: AccountRow, request: RequestModel): Promise<AccountDetailPayload> {
@@ -34,7 +47,7 @@ export async function fetchAccountDetail(account: AccountRow, request: RequestMo
   })
   const response = await fetch(`/api/abook/accounts/${encodeURIComponent(account.platform)}/${account.login}?${params.toString()}`)
   if (!response.ok) throw new Error(await response.text() || `HTTP ${response.status}`)
-  return response.json() as Promise<AccountDetailPayload>
+  return readJsonResponse<AccountDetailPayload>(response, '/api/abook/accounts/:platform/:login')
 }
 
 export function exportAbook(request: RequestModel) {

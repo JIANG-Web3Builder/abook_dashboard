@@ -121,6 +121,36 @@ def test_markout_summary_builds_entry_exit_curves_from_matched_trade_tape():
     assert result["entry"]["sample_count"] == 2
 
 
+def test_markout_uses_same_symbol_tape_and_turnover_weighted_bps():
+    rows = [
+        {
+            "symbol": "EURUSD",
+            "entry_time": "2026-01-01 00:00:00",
+            "exit_time": "2026-01-01 00:00:00.100",
+            "entry_price": 100.0,
+            "exit_price": 101.0,
+            "direction": "Long",
+            "volume": 1.0,
+            "turnover": 1000.0,
+        },
+        {
+            "symbol": "XAUUSD",
+            "entry_time": "2026-01-01 00:00:00",
+            "exit_time": "2026-01-01 00:00:00.100",
+            "entry_price": 2000.0,
+            "exit_price": 2200.0,
+            "direction": "Long",
+            "volume": 1.0,
+            "turnover": 100.0,
+        },
+    ]
+
+    result = summarize_markout_rows(rows)
+    entry_1s = next(point for point in result["entry"]["curve"] if point["offset_ms"] == 1000)
+
+    assert entry_1s["mean_bps"] == 181.818182
+
+
 def test_account_detail_omits_dimensions_without_observations():
     result = build_account_detail_metrics([
         {"profit": 10, "symbol": "EURUSD", "exit_time": "2026-05-01 10:00:00"},

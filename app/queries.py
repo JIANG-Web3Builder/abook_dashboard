@@ -461,7 +461,7 @@ def build_account_detail_query(platform: str, login: int, start: str, end: str) 
     query = f"""
     SELECT
         platform, login, symbol, direction, entry_time, exit_time,
-        entry_price, exit_price, volume, profit, holding_seconds,
+        entry_price, exit_price, volume, turnover, profit, holding_seconds,
         entry_deal_id, exit_deal_id
     FROM risk.dwd_matched_trades AS m FINAL
     INNER JOIN {USER_SOURCE_SQL} AS u
