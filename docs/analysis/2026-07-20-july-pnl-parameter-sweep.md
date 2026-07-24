@@ -6,8 +6,8 @@
 
 ## 方法
 
-- 脚本：`scripts/optimize_july_pnl.py`
-- 一次拉取 ClickHouse 全量人口 + 本地风险/马丁/R4/avg_profit 快照
+- 基于一次完整分析请求复核默认参数
+- 一次拉取 ClickHouse 全量人口 + 本地风险/马丁/avg_profit 快照
 - 内存网格搜索 28,800 组主动路由参数
 - 最优组合再走完整 `build_two_stage_payload` 复核
 
@@ -24,8 +24,6 @@
 | max_top1_day_profit_contribution | 0.3（严格 `<`） |
 | max_leverage_p95_ratio | 5000 |
 | max_high_leverage_holding_seconds | 300 |
-| enable_r4 | false |
-| r4_min_passing_weeks | 1 |
 | excluded_martingale_levels | extreme/high/medium/low |
 
 复核结果：
@@ -35,8 +33,8 @@
 - 盈利 / 亏损（中性带 ±10）：46 / 29
 - 达标组合数（≥10000）：313
 
-相对旧默认（payoff≥0.5、杠杆 P95≤2000、R4 开启），主要增益来自关闭 R4、放宽杠杆 P95 至 5000，以及略放宽盈亏比至 0.4。
+相对旧默认（payoff≥0.5、杠杆 P95≤2000），主要增益来自放宽杠杆 P95 至 5000，以及略放宽盈亏比至 0.4。
 
 ## 限制
 
-样本内寻优，不能当作未来收益保证；完整新月数据到位后应重新跑 `scripts/optimize_july_pnl.py` 复核。
+样本内复核，不能当作未来收益保证；完整新月数据到位后应重新运行分析复核。

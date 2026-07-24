@@ -119,4 +119,4 @@ AND risk_level in excluded_martingale_levels
 - 本次不重建底层 `risk.dws_account_martingale_window` 表；
 - 本次不引入黑盒机器学习分类器；
 - 本次不使用 7 月 P&L 参与马丁判定；
-- 本次不改变 R4 的独立通道定义。
+- 本次不改变其他分析模块的定义。

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 
@@ -16,6 +16,20 @@ class Settings:
     clickhouse_secure: bool
     clickhouse_compress: bool = True
     clickhouse_use_server_time_zone_for_dates: bool = True
+    data_source: str = "local"
+    warehouse_path: Path = field(
+        default_factory=lambda: Path(__file__).resolve().parent.parent / "data" / "warehouse"
+    )
+    warehouse_tail_days: int = 7
+    warehouse_lookback_months: int = 3
+
+    def __post_init__(self) -> None:
+        if self.data_source not in {"local", "remote"}:
+            raise ValueError("ABOOK_DATA_SOURCE must be local or remote")
+        if self.warehouse_tail_days < 1:
+            raise ValueError("ABOOK_WAREHOUSE_TAIL_DAYS must be at least 1")
+        if self.warehouse_lookback_months < 0:
+            raise ValueError("ABOOK_WAREHOUSE_LOOKBACK_MONTHS must be non-negative")
 
     @property
     def configured(self) -> bool:
@@ -54,4 +68,13 @@ def get_settings() -> Settings:
         clickhouse_use_server_time_zone_for_dates=os.getenv(
             "CLICKHOUSE_USE_SERVER_TIME_ZONE_FOR_DATES", "1"
         ).lower() in {"1", "true", "yes"},
+        data_source=os.getenv("ABOOK_DATA_SOURCE", "local").lower(),
+        warehouse_path=Path(
+            os.getenv(
+                "ABOOK_WAREHOUSE_PATH",
+                str(Path(__file__).resolve().parent.parent / "data" / "warehouse"),
+            )
+        ),
+        warehouse_tail_days=int(os.getenv("ABOOK_WAREHOUSE_TAIL_DAYS", "7")),
+        warehouse_lookback_months=int(os.getenv("ABOOK_WAREHOUSE_LOOKBACK_MONTHS", "3")),
     )

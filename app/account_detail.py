@@ -39,6 +39,60 @@ def _sum_rows(rows: Iterable[dict[str, Any]]) -> float:
     return round(sum(_number(row.get("profit")) for row in rows), 6)
 
 
+def _empty_direction_metric() -> dict[str, Any]:
+    return {
+        "trade_count": 0,
+        "winning_trades": 0,
+        "losing_trades": 0,
+        "win_rate": None,
+        "profit_factor": None,
+        "payoff_ratio": None,
+        "side_pnl": 0.0,
+        "sample_status": "no_activity",
+    }
+
+
+def _direction_metric(row: dict[str, Any]) -> dict[str, Any]:
+    trades = int(row.get("matched_trades", 0) or 0)
+    wins = int(row.get("winning_trades", 0) or 0)
+    losses = int(row.get("losing_trades", 0) or 0)
+    gross_wins = _number(row.get("gross_wins"))
+    gross_losses = abs(_number(row.get("gross_losses")))
+    average_win = gross_wins / wins if wins else 0.0
+    average_loss = gross_losses / losses if losses else 0.0
+    return {
+        "trade_count": trades,
+        "winning_trades": wins,
+        "losing_trades": losses,
+        "win_rate": round(wins / trades, 6) if trades else None,
+        "profit_factor": round(gross_wins / gross_losses, 6) if gross_losses else None,
+        "payoff_ratio": round(average_win / average_loss, 6) if average_loss else None,
+        "side_pnl": round(_number(row.get("side_pnl")), 6),
+        "sample_status": "active" if trades else "no_activity",
+    }
+
+
+def build_direction_summary(rows: Iterable[dict[str, Any]]) -> dict[str, Any]:
+    by_phase: dict[str, dict[str, dict[str, Any]]] = {
+        "selection": {"long": _empty_direction_metric(), "short": _empty_direction_metric()},
+        "validation": {"long": _empty_direction_metric(), "short": _empty_direction_metric()},
+    }
+    for row in rows:
+        phase = str(row.get("phase", ""))
+        direction = str(row.get("direction", "")).lower()
+        if phase not in by_phase or direction not in {"long", "short"}:
+            continue
+        by_phase[phase][direction] = _direction_metric(row)
+
+    for phase, values in by_phase.items():
+        long_count = values["long"]["trade_count"]
+        short_count = values["short"]["trade_count"]
+        total = long_count + short_count
+        values["long_trades_ratio"] = round(long_count / total, 6) if total else None
+        values["short_trades_ratio"] = round(short_count / total, 6) if total else None
+    return {"basis": "matched.profit", **by_phase}
+
+
 def _remove_group_profit(rows: list[dict[str, Any]], group_key: Any, top_n: int = 1) -> float:
     grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for row in rows:

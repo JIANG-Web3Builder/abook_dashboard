@@ -10,7 +10,6 @@ from typing import Any, Iterable, Optional
 
 from .metrics import calculate_drawdown
 from .account_detail import build_account_detail_metrics, summarize_markout_rows
-from .r4 import R4_MIN_PRIMARY_TRADES, R4_MIN_TRADES, R4_PRIMARY_TRADE_PCT, R4_WIN_RATE
 
 
 ZERO = Decimal("0")
@@ -132,6 +131,19 @@ def _ratio(numerator: Decimal, denominator: Decimal) -> float:
     return float(numerator / denominator) if denominator else 0.0
 
 
+def _long_trades_ratio_pass(
+    selection: dict[str, Any],
+    min_long_trades_ratio: float,
+    max_long_trades_ratio: float,
+) -> bool:
+    ratio = _finite_decimal(selection.get("long_trades_ratio"))
+    return (
+        Decimal(str(min_long_trades_ratio))
+        <= ratio
+        <= Decimal(str(max_long_trades_ratio))
+    )
+
+
 def _stddev(values: list[Decimal]) -> Decimal:
     if len(values) < 2:
         return ZERO
@@ -210,6 +222,8 @@ def _aggregate_account(rows: list[dict[str, Any]]) -> dict[str, Any]:
         )
         daily_stddev = _ratio(legacy_weighted_stddev, Decimal(daily_active_days))
     daily_profit_sum = _sum(rows, "daily_profit_sum")
+    long_trades = sum(int(row.get("long_trades", 0) or 0) for row in rows)
+    short_trades = sum(int(row.get("short_trades", 0) or 0) for row in rows)
     cumulative = []
     running = ZERO
     for row in sorted(rows, key=lambda item: _month(item["month_start"])):
@@ -265,8 +279,9 @@ def _aggregate_account(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "average_daily_profit": _float(_ratio(daily_profit_sum, Decimal(active_trade_days))),
         "avg_holding_seconds": _ratio(weighted_hold, Decimal(trade_count)),
         "median_holding_seconds": _float(_median([_finite_decimal(row.get("median_holding_seconds")) for row in rows])),
-        "long_trades": sum(int(row.get("long_trades", 0) or 0) for row in rows),
-        "short_trades": sum(int(row.get("short_trades", 0) or 0) for row in rows),
+        "long_trades": long_trades,
+        "short_trades": short_trades,
+        "long_trades_ratio": _ratio(Decimal(long_trades), Decimal(long_trades + short_trades)),
         "symbols_traded": max(int(row.get("symbols_traded", 0) or 0) for row in rows),
         "max_drawdown": _float(calculate_drawdown(cumulative)),
         "months": [_month(row["month_start"]) for row in sorted(rows, key=lambda item: _month(item["month_start"]))],
@@ -764,6 +779,8 @@ def classify_accounts(
         min_selection_monthly_consistency=rules.min_selection_monthly_consistency,
         min_positive_month_rate=rules.min_positive_month_rate,
         max_top1_day_profit_contribution=rules.max_top1_day_profit_contribution,
+        min_long_trades_ratio=rules.min_long_trades_ratio,
+        max_long_trades_ratio=rules.max_long_trades_ratio,
         max_daily_profit_month_contribution=rules.max_daily_profit_month_contribution,
         max_leverage_p95_ratio=rules.max_leverage_p95_ratio,
         max_high_leverage_holding_seconds=rules.max_high_leverage_holding_seconds,
@@ -777,8 +794,6 @@ def classify_accounts(
         excluded_martingale_levels=rules.excluded_martingale_levels,
         avg_profit_snapshot_status=avg_profit_snapshot_status,
         require_selection_monthly_positive=rules.require_selection_monthly_positive,
-        enable_r4=rules.enable_r4,
-        r4_min_passing_weeks=rules.r4_min_passing_weeks,
     )
     return payload["accounts"]
 
@@ -896,6 +911,7 @@ _BOOK_REASON_LABELS = {
     "daily_confidence": "日度稳定性不足",
     "win_rate": "胜率未达标",
     "payoff_ratio": "盈亏比未达标",
+    "long_trades_ratio": "多空方向比例未达标",
     "monthly_consistency": "月度一致性未达标",
     "profit_concentration": "盈利集中度过高",
     "loss_concentration": "亏损集中度异常",
@@ -999,6 +1015,8 @@ def build_selection_funnel(
     *,
     min_trades: int | None = None,
     min_active_days: int | None = None,
+    min_long_trades_ratio: float = 0.3,
+    max_long_trades_ratio: float = 0.7,
 ) -> dict[str, Any]:
     all_accounts = list(accounts)
     has_explicit_sample_rule = min_trades is not None
@@ -1017,6 +1035,13 @@ def build_selection_funnel(
                 )
             ),
             "insufficient_sample",
+        ),
+        (
+            "direction_balance_passed",
+            lambda account: _long_trades_ratio_pass(
+                account.get("selection", {}), min_long_trades_ratio, max_long_trades_ratio
+            ),
+            "long_trades_ratio",
         ),
         ("leverage_passed", lambda account: "leverage_p95_ratio" not in account.get("selection_flags", []), "leverage_p95_ratio"),
         ("non_martingale", lambda account: not account.get("martingale_blocked", False), "martingale_blocked"),
@@ -1226,16 +1251,18 @@ def build_two_stage_payload(
     min_active_days: int = 0,
     min_win_rate: float = 0.5,
     min_profit_factor: float = 1.25,
-    min_payoff_ratio: float = 0.4,
+    min_payoff_ratio: float = 0.6,
     min_avg_daily_profit: float = 0.0,
     min_avg_profit: float = 0.0,
     min_selection_monthly_consistency: float = 0.0,
     min_positive_month_rate: float = 0.5,
     max_top1_day_profit_contribution: float = 0.3,
+    min_long_trades_ratio: float = 0.3,
+    max_long_trades_ratio: float = 0.7,
     max_daily_profit_month_contribution: float = 1.0,
-    max_leverage_p95_ratio: float = 5000.0,
+    max_leverage_p95_ratio: float = 2000.0,
     max_peak_leverage_ratio: float | None = None,
-    max_high_leverage_holding_seconds: float = 300.0,
+    max_high_leverage_holding_seconds: float = 60.0,
     risk_snapshot_status: str = "not_loaded",
     min_direction_day_rate_lower_bound: float = 0.55,
     min_stability_score: float = 70.0,
@@ -1249,11 +1276,9 @@ def build_two_stage_payload(
     excluded_martingale_levels: Iterable[str] = ("extreme", "high", "medium", "low"),
     avg_profit_snapshot_status: str = "not_loaded",
     require_selection_monthly_positive: bool = False,
-    enable_r4: bool = False,
-    r4_min_passing_weeks: int = 1,
 ) -> dict[str, Any]:
     """Build final Abook/Bbook routing and an independent validation-period readout."""
-    if max_peak_leverage_ratio is not None and max_leverage_p95_ratio == 5000.0:
+    if max_peak_leverage_ratio is not None and max_leverage_p95_ratio == 2000.0:
         max_leverage_p95_ratio = max_peak_leverage_ratio
     materialized = list(rows)
     # This is a hard safety boundary. The query already applies the same
@@ -1331,6 +1356,7 @@ def build_two_stage_payload(
             selection["profit_factor"] is None or selection["profit_factor"] > min_profit_factor
         ) and selection["win_rate"] >= min_win_rate \
             and selection["payoff_ratio"] >= min_payoff_ratio \
+            and _long_trades_ratio_pass(selection, min_long_trades_ratio, max_long_trades_ratio) \
             and selection["top_positive_day_concentration"] < max_top1_day_profit_contribution \
             and _leverage_filter_pass(
                 selection, max_leverage_p95_ratio, max_high_leverage_holding_seconds
@@ -1353,15 +1379,9 @@ def build_two_stage_payload(
             high_confidence_trades=high_confidence_trades,
             high_confidence_days=high_confidence_days,
         )
-        # Day-distribution and stability metrics remain diagnostic only. They no
-        # longer gate Abook routing under the revised policy.
-        r4_pass = bool(
-            enable_r4
-            and first.get("r4_pass", False)
-            and int(first.get("r4_passing_weeks", 0) or 0) >= r4_min_passing_weeks
-            and _leverage_filter_pass(selection, max_leverage_p95_ratio, max_high_leverage_holding_seconds)
-        )
-        abook_rules_pass = bool(normal_abook_rules_pass or r4_pass)
+        # Day-distribution and stability metrics remain diagnostic only. They do
+        # not gate Abook routing under the revised policy.
+        abook_rules_pass = bool(normal_abook_rules_pass)
         is_personal_candidate = int(identity["login"]) in personal_logins
         is_news_candidate = int(identity["login"]) in news_logins
         martingale_record = None
@@ -1393,14 +1413,6 @@ def build_two_stage_payload(
             selection_source = "martingale_snapshot_unavailable"
         elif martingale_blocked:
             selection_source = "martingale_blocked"
-        elif r4_pass and is_personal_candidate and is_news_candidate:
-            selection_source = "r4_and_personal_and_news_list"
-        elif r4_pass and is_personal_candidate:
-            selection_source = "r4_and_personal_list"
-        elif r4_pass and is_news_candidate:
-            selection_source = "r4_and_news_list"
-        elif r4_pass:
-            selection_source = "r4"
         elif is_personal_candidate and is_news_candidate:
             selection_source = (
                 "rule_and_personal_and_news_list"
@@ -1422,7 +1434,6 @@ def build_two_stage_payload(
         routing_reason = (
             "martingale_snapshot_unavailable" if snapshot_unavailable
             else "martingale" if martingale_blocked
-            else "r4" if r4_pass
             else "personal_list" if is_personal_candidate
             else "abook_rules" if abook_rules_pass
             else "abook_rules_failed"
@@ -1437,6 +1448,9 @@ def build_two_stage_payload(
             if (has_phase_rows and row.get("phase") in {"selection", "validation"})
             or (not has_phase_rows and _month(row["month_start"]) in all_months)
         )
+        selection_flags = list(stability["flags"])
+        if not _long_trades_ratio_pass(selection, min_long_trades_ratio, max_long_trades_ratio):
+            selection_flags.append("long_trades_ratio")
         account = {
             **identity,
             "book": book,
@@ -1446,9 +1460,6 @@ def build_two_stage_payload(
             "selection_source": selection_source,
             "routing_reason": routing_reason,
             "abook_rules_pass": abook_rules_pass,
-            "r4_pass": r4_pass,
-            "r4_passing_weeks": int(first.get("r4_passing_weeks", 0) or 0),
-            "r4_record": dict(first.get("r4_record") or {}),
             "july_new_user": selection["trade_count"] == 0 and validation["trade_count"] > 0,
             "martingale_blocked": martingale_blocked,
             "martingale_hard_block": martingale_hard_block,
@@ -1483,7 +1494,7 @@ def build_two_stage_payload(
                 "return_drawdown_ratio": selection["return_drawdown_ratio"],
             },
             "confidence_tier": stability["confidence_tier"],
-            "selection_flags": stability["flags"],
+            "selection_flags": selection_flags,
             "selection_direction": stability["direction"],
             "selection_months_positive": selection_months_positive,
             "selection_client_net_pnl": selection["client_net_pnl"],
@@ -1757,6 +1768,8 @@ def build_two_stage_payload(
         unique_accounts,
         min_trades=min_trades,
         min_active_days=min_active_days,
+        min_long_trades_ratio=min_long_trades_ratio,
+        max_long_trades_ratio=max_long_trades_ratio,
     )
     without_personal_count = sum(
         1 for account in accounts
@@ -1808,19 +1821,12 @@ def build_two_stage_payload(
         },
         "rules": {
             "min_trades": min_trades,
-            "enable_r4": enable_r4,
-            "r4_min_passing_weeks": r4_min_passing_weeks,
-            "r4_thresholds": {
-                "primary_trade_pct": R4_PRIMARY_TRADE_PCT,
-                "win_rate": R4_WIN_RATE,
-                "total_trades": R4_MIN_TRADES,
-                "primary_trades": R4_MIN_PRIMARY_TRADES,
-                "soft_alignment": 1,
-            },
             "selection_months_positive_required": False,
             "min_win_rate": min_win_rate,
             "min_profit_factor": min_profit_factor,
             "min_payoff_ratio": min_payoff_ratio,
+            "min_long_trades_ratio": min_long_trades_ratio,
+            "max_long_trades_ratio": max_long_trades_ratio,
             "max_top1_day_profit_contribution": max_top1_day_profit_contribution,
             "avg_profit_snapshot_status": avg_profit_snapshot_status,
             "max_leverage_p95_ratio": max_leverage_p95_ratio,

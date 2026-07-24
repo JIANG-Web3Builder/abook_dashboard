@@ -1,0 +1,229 @@
+{
+  "evaluated": 96000,
+  "best": {
+    "july_abook_net_pnl": 30856.63,
+    "abook_accounts": 50,
+    "abook_positive": 29,
+    "abook_negative": 14,
+    "rules": {
+      "min_trades": 75,
+      "min_win_rate": 0.5,
+      "min_profit_factor": 1.25,
+      "min_payoff_ratio": 0.6,
+      "min_long_trades_ratio": 0.3,
+      "max_long_trades_ratio": 0.7,
+      "max_top1_day_profit_contribution": 0.3,
+      "max_leverage_p95_ratio": 2000.0,
+      "max_high_leverage_holding_seconds": 60.0
+    }
+  },
+  "chosen": {
+    "july_abook_net_pnl": 30856.63,
+    "abook_accounts": 50,
+    "abook_positive": 29,
+    "abook_negative": 14,
+    "rules": {
+      "min_trades": 75,
+      "min_win_rate": 0.5,
+      "min_profit_factor": 1.25,
+      "min_payoff_ratio": 0.6,
+      "min_long_trades_ratio": 0.3,
+      "max_long_trades_ratio": 0.7,
+      "max_top1_day_profit_contribution": 0.3,
+      "max_leverage_p95_ratio": 2000.0,
+      "max_high_leverage_holding_seconds": 60.0
+    }
+  },
+  "qualifying_count": 9818,
+  "top10": [
+    {
+      "july_abook_net_pnl": 30856.63,
+      "abook_accounts": 50,
+      "abook_positive": 29,
+      "abook_negative": 14,
+      "rules": {
+        "min_trades": 75,
+        "min_win_rate": 0.5,
+        "min_profit_factor": 1.25,
+        "min_payoff_ratio": 0.6,
+        "min_long_trades_ratio": 0.3,
+        "max_long_trades_ratio": 0.7,
+        "max_top1_day_profit_contribution": 0.3,
+        "max_leverage_p95_ratio": 2000.0,
+        "max_high_leverage_holding_seconds": 60.0
+      }
+    },
+    {
+      "july_abook_net_pnl": 30811.75,
+      "abook_accounts": 57,
+      "abook_positive": 30,
+      "abook_negative": 18,
+      "rules": {
+        "min_trades": 75,
+        "min_win_rate": 0.45,
+        "min_profit_factor": 1.25,
+        "min_payoff_ratio": 0.6,
+        "min_long_trades_ratio": 0.3,
+        "max_long_trades_ratio": 0.7,
+        "max_top1_day_profit_contribution": 0.3,
+        "max_leverage_p95_ratio": 2000.0,
+        "max_high_leverage_holding_seconds": 60.0
+      }
+    },
+    {
+      "july_abook_net_pnl": 30810.02,
+      "abook_accounts": 65,
+      "abook_positive": 37,
+      "abook_negative": 21,
+      "rules": {
+        "min_trades": 60,
+        "min_win_rate": 0.5,
+        "min_profit_factor": 1.1,
+        "min_payoff_ratio": 0.4,
+        "min_long_trades_ratio": 0.3,
+        "max_long_trades_ratio": 0.7,
+        "max_top1_day_profit_contribution": 0.2,
+        "max_leverage_p95_ratio": 2000.0,
+        "max_high_leverage_holding_seconds": 60.0
+      }
+    },
+    {
+      "july_abook_net_pnl": 30764.22,
+      "abook_accounts": 58,
+      "abook_positive": 35,
+      "abook_negative": 19,
+      "rules": {
+        "min_trades": 60,
+        "min_win_rate": 0.5,
+        "min_profit_factor": 1.1,
+        "min_payoff_ratio": 0.6,
+        "min_long_trades_ratio": 0.3,
+        "max_long_trades_ratio": 0.7,
+        "max_top1_day_profit_contribution": 0.2,
+        "max_leverage_p95_ratio": 2000.0,
+        "max_high_leverage_holding_seconds": 60.0
+      }
+    },
+    {
+      "july_abook_net_pnl": 30711.03,
+      "abook_accounts": 62,
+      "abook_positive": 35,
+      "abook_negative": 21,
+      "rules": {
+        "min_trades": 60,
+        "min_win_rate": 0.5,
+        "min_profit_factor": 1.1,
+        "min_payoff_ratio": 0.5,
+        "min_long_trades_ratio": 0.3,
+        "max_long_trades_ratio": 0.7,
+        "max_top1_day_profit_contribution": 0.2,
+        "max_leverage_p95_ratio": 2000.0,
+        "max_high_leverage_holding_seconds": 60.0
+      }
+    },
+    {
+      "july_abook_net_pnl": 30624.44,
+      "abook_accounts": 66,
+      "abook_positive": 35,
+      "abook_negative": 21,
+      "rules": {
+        "min_trades": 60,
+        "min_win_rate": 0.5,
+        "min_profit_factor": 1.25,
+        "min_payoff_ratio": 0.6,
+        "min_long_trades_ratio": 0.3,
+        "max_long_trades_ratio": 0.7,
+        "max_top1_day_profit_contribution": 0.3,
+        "max_leverage_p95_ratio": 2000.0,
+        "max_high_leverage_holding_seconds": 60.0
+      }
+    },
+    {
+      "july_abook_net_pnl": 30507.48,
+      "abook_accounts": 75,
+      "abook_positive": 37,
+      "abook_negative": 26,
+      "rules": {
+        "min_trades": 60,
+        "min_win_rate": 0.45,
+        "min_profit_factor": 1.25,
+        "min_payoff_ratio": 0.6,
+        "min_long_trades_ratio": 0.3,
+        "max_long_trades_ratio": 0.7,
+        "max_top1_day_profit_contribution": 0.3,
+        "max_leverage_p95_ratio": 2000.0,
+        "max_high_leverage_holding_seconds": 60.0
+      }
+    },
+    {
+      "july_abook_net_pnl": 30503.74,
+      "abook_accounts": 75,
+      "abook_positive": 40,
+      "abook_negative": 27,
+      "rules": {
+        "min_trades": 60,
+        "min_win_rate": 0.45,
+        "min_profit_factor": 1.1,
+        "min_payoff_ratio": 0.4,
+        "min_long_trades_ratio": 0.3,
+        "max_long_trades_ratio": 0.7,
+        "max_top1_day_profit_contribution": 0.2,
+        "max_leverage_p95_ratio": 2000.0,
+        "max_high_leverage_holding_seconds": 60.0
+      }
+    },
+    {
+      "july_abook_net_pnl": 30457.94,
+      "abook_accounts": 68,
+      "abook_positive": 38,
+      "abook_negative": 25,
+      "rules": {
+        "min_trades": 60,
+        "min_win_rate": 0.45,
+        "min_profit_factor": 1.1,
+        "min_payoff_ratio": 0.6,
+        "min_long_trades_ratio": 0.3,
+        "max_long_trades_ratio": 0.7,
+        "max_top1_day_profit_contribution": 0.2,
+        "max_leverage_p95_ratio": 2000.0,
+        "max_high_leverage_holding_seconds": 60.0
+      }
+    },
+    {
+      "july_abook_net_pnl": 30411.87,
+      "abook_accounts": 54,
+      "abook_positive": 32,
+      "abook_negative": 17,
+      "rules": {
+        "min_trades": 75,
+        "min_win_rate": 0.5,
+        "min_profit_factor": 1.1,
+        "min_payoff_ratio": 0.4,
+        "min_long_trades_ratio": 0.3,
+        "max_long_trades_ratio": 0.7,
+        "max_top1_day_profit_contribution": 0.2,
+        "max_leverage_p95_ratio": 2000.0,
+        "max_high_leverage_holding_seconds": 60.0
+      }
+    }
+  ],
+  "window": {
+    "selection": "2026-05-01..2026-06-30",
+    "validation": "2026-07-01..2026-07-22"
+  },
+  "verified": {
+    "abook_accounts": 50,
+    "july_abook_net_pnl": 30856.63,
+    "rules": {
+      "min_trades": 75,
+      "min_win_rate": 0.5,
+      "min_profit_factor": 1.25,
+      "min_payoff_ratio": 0.6,
+      "min_long_trades_ratio": 0.3,
+      "max_long_trades_ratio": 0.7,
+      "max_top1_day_profit_contribution": 0.3,
+      "max_leverage_p95_ratio": 2000.0,
+      "max_high_leverage_holding_seconds": 60.0
+    }
+  }
+}

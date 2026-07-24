@@ -9,13 +9,12 @@ from typing import Any, Callable
 
 from scripts.build_avg_profit_snapshot import build_snapshot as avg_profit_build_snapshot
 from scripts.build_martingale_snapshot import build_snapshot as martingale_build_snapshot
-from scripts.build_r4_snapshot import build_snapshot as r4_build_snapshot
 from scripts.build_user_risk_snapshot import build_snapshot as risk_build_snapshot
 
 from .avg_profit import snapshot_path as avg_profit_snapshot_path
+from .analysis_cache import analysis_session_cache, direction_analytics_cache
 from .martingale import snapshot_path as martingale_snapshot_path
 from .risk import snapshot_path as risk_snapshot_path
-from .r4 import snapshot_path as r4_snapshot_path
 
 
 _REFRESH_LOCK = threading.Lock()
@@ -26,7 +25,6 @@ def snapshot_paths() -> dict[str, Path]:
         "risk": risk_snapshot_path(),
         "avg_profit": avg_profit_snapshot_path(),
         "martingale": martingale_snapshot_path(),
-        "r4": r4_snapshot_path(),
     }
 
 
@@ -52,14 +50,19 @@ def refresh_snapshots(
     selection_start: str,
     selection_end: str,
     platforms: list[str],
+    *,
+    validation_start: str | None = None,
+    validation_end: str | None = None,
+    warehouse_generation: str | None = None,
 ) -> dict[str, object]:
     """Build and atomically publish all local analysis snapshots."""
     builders: dict[str, Callable[[str, str, list[str]], dict[str, Any]]] = {
         "risk": risk_build_snapshot,
         "avg_profit": avg_profit_build_snapshot,
         "martingale": martingale_build_snapshot,
-        "r4": r4_build_snapshot,
     }
+    validation_start = validation_start or selection_start
+    validation_end = validation_end or selection_end
     with _REFRESH_LOCK:
         paths = snapshot_paths()
         if len(set(paths.values())) != len(paths):
@@ -73,10 +76,16 @@ def refresh_snapshots(
         staged: dict[str, Path] = {}
         originals: dict[Path, bytes | None] = {}
         try:
-            payloads = {
-                name: builder(selection_start, selection_end, list(platforms))
-                for name, builder in builders.items()
-            }
+            payloads = {}
+            for name, builder in builders.items():
+                payload = dict(builder(selection_start, selection_end, list(platforms)))
+                payload["selection_start"] = selection_start
+                payload["selection_end"] = selection_end
+                payload["validation_start"] = validation_start
+                payload["validation_end"] = validation_end
+                if warehouse_generation:
+                    payload["warehouse_generation"] = warehouse_generation
+                payloads[name] = payload
             for name, path in paths.items():
                 path.parent.mkdir(parents=True, exist_ok=True)
                 originals[path] = path.read_bytes() if path.exists() else None
@@ -87,10 +96,16 @@ def refresh_snapshots(
             for name, path in paths.items():
                 os.replace(staged[name], path)
 
+            analysis_session_cache.clear()
+            direction_analytics_cache.clear()
+
             return {
                 "status": "ready",
                 "selection_start": selection_start,
                 "selection_end": selection_end,
+                "validation_start": validation_start,
+                "validation_end": validation_end,
+                "warehouse_generation": warehouse_generation,
                 "snapshots": {
                     name: {
                         "status": "ready",

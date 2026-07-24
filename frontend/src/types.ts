@@ -1,4 +1,4 @@
-export type Tab = 'overview' | 'users' | 'risk' | 'routing'
+export type Tab = 'overview' | 'users' | 'risk-routing' | 'direction'
 
 export interface RequestModel {
   selection: { start: string; end: string }
@@ -42,9 +42,6 @@ export interface AccountRow {
   confirmed_extreme_windows?: number
   expanded_windows?: number
   martingale_layer_hits?: Record<string, boolean>
-  r4_pass?: boolean
-  r4_passing_weeks?: number
-  r4_record?: Record<string, any>
   july_new_user?: boolean
 }
 
@@ -59,17 +56,29 @@ export interface BookAnalyticsPayload {
   [key: string]: any
 }
 
-export interface SnapshotRefreshResponse {
+export interface DirectionAnalyticsPayload {
+  pnl_basis?: string
+  selection?: { start: string; end: string }
+  validation?: { start: string; end: string }
+  counts?: Record<string, number>
+  book_counts?: Record<'abook' | 'bbook', Record<string, number>>
+  accounts?: Array<Record<string, any>>
+  sets?: Record<string, Record<'long' | 'short', Record<string, any>>>
+  book_sets?: Record<string, Record<'abook' | 'bbook', Record<'long' | 'short', Record<string, any>>>>
+  comparison?: Record<string, number>
+  rules?: Record<string, any>
+}
+
+export interface WarehouseStatus {
+  source: string
   status: string
-  selection_start: string
-  selection_end: string
-  snapshots: Record<string, {
-    status: string
-    path: string
-    records: number
-    selection_start: string
-    selection_end: string
-  }>
+  warehouse_path?: string
+  generation?: string | null
+  updated_at?: string | null
+  data_start?: string | null
+  data_end?: string | null
+  platforms?: string[]
+  snapshots?: Record<string, { status: string; warehouse_generation?: string | null }>
 }
 
 export interface AccountDetailPayload {
@@ -96,6 +105,31 @@ export interface AccountDetailPayload {
     }>
   }>
   martingale?: Record<string, any>
+  direction_summary?: DirectionSummary
+}
+
+export interface DirectionMetric {
+  trade_count: number
+  winning_trades?: number
+  losing_trades?: number
+  win_rate: number | null
+  profit_factor: number | null
+  payoff_ratio: number | null
+  side_pnl: number
+  sample_status: string
+}
+
+export interface DirectionSummaryPhase {
+  long: DirectionMetric
+  short: DirectionMetric
+  long_trades_ratio: number | null
+  short_trades_ratio: number | null
+}
+
+export interface DirectionSummary {
+  basis: 'matched.profit'
+  selection: DirectionSummaryPhase
+  validation: DirectionSummaryPhase
 }
 
 export interface AnalysisPayload {

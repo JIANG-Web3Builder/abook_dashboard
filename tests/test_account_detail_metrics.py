@@ -1,7 +1,38 @@
 from __future__ import annotations
 
-from app.account_detail import build_account_detail_metrics, summarize_markout_rows
+import pytest
+
+from app.account_detail import build_account_detail_metrics, build_direction_summary, summarize_markout_rows
 from app.exposure import build_unmatched_open_events, reconstruct_peak_exposure
+
+
+def test_build_direction_summary_calculates_phase_side_metrics_and_ratios():
+    rows = [
+        {"phase": "selection", "direction": "Long", "matched_trades": 3, "winning_trades": 2, "losing_trades": 1, "side_pnl": 30, "gross_wins": 40, "gross_losses": -10},
+        {"phase": "selection", "direction": "Short", "matched_trades": 2, "winning_trades": 1, "losing_trades": 1, "side_pnl": -5, "gross_wins": 10, "gross_losses": -15},
+        {"phase": "validation", "direction": "Long", "matched_trades": 1, "winning_trades": 1, "losing_trades": 0, "side_pnl": 12, "gross_wins": 12, "gross_losses": 0},
+    ]
+
+    result = build_direction_summary(rows)
+
+    assert result["basis"] == "matched.profit"
+    assert result["selection"]["long"]["trade_count"] == 3
+    assert result["selection"]["long"]["win_rate"] == pytest.approx(2 / 3, abs=1e-6)
+    assert result["selection"]["short"]["profit_factor"] == pytest.approx(10 / 15, abs=1e-6)
+    assert result["selection"]["long_trades_ratio"] == pytest.approx(3 / 5, abs=1e-6)
+    assert result["selection"]["short_trades_ratio"] == pytest.approx(2 / 5, abs=1e-6)
+    assert result["validation"]["long"]["side_pnl"] == 12.0
+    assert result["validation"]["short"]["sample_status"] == "no_activity"
+    assert result["validation"]["long_trades_ratio"] == 1.0
+    assert result["validation"]["short_trades_ratio"] == 0.0
+
+
+def test_build_direction_summary_returns_null_ratios_when_phase_has_no_trades():
+    result = build_direction_summary([])
+
+    assert result["selection"]["long_trades_ratio"] is None
+    assert result["selection"]["short_trades_ratio"] is None
+    assert result["selection"]["long"]["sample_status"] == "no_activity"
 
 
 def _row(day: str, profit: float, symbol: str, hour: int, volume: float, event: str | None = None) -> dict:

@@ -11,6 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import clickhouse_connect
 
 from app.config import get_settings, load_env_file
+from app.query_client import LocalClientAdapter
 from app.martingale import snapshot_path
 from app.queries import ALLOWED_PLATFORMS, USER_SOURCE_SQL
 
@@ -53,17 +54,20 @@ def build_snapshot(
     window_type: str = "7D_SLIDING",
 ) -> dict:
     settings = get_settings()
-    if not settings.configured:
+    if settings.data_source == "remote" and not settings.configured:
         raise RuntimeError("CLICKHOUSE_PASSWORD is not configured")
     selected = sorted(set(platforms) & ALLOWED_PLATFORMS)
-    client = clickhouse_connect.get_client(
-        host=settings.clickhouse_host,
-        port=settings.clickhouse_port,
-        username=settings.clickhouse_user,
-        password=settings.clickhouse_password,
-        database=settings.clickhouse_database,
-        secure=settings.clickhouse_secure,
-    )
+    if settings.data_source == "local":
+        client = LocalClientAdapter(settings.warehouse_path)
+    else:
+        client = clickhouse_connect.get_client(
+            host=settings.clickhouse_host,
+            port=settings.clickhouse_port,
+            username=settings.clickhouse_user,
+            password=settings.clickhouse_password,
+            database=settings.clickhouse_database,
+            secure=settings.clickhouse_secure,
+        )
     # avg_volume_escalation is stored as a multiplier (median 1.0 across the
     # table), so martingale.md thresholds apply unchanged. Windows are rolling
     # 7-day windows. A broad candidate is retained for audit, but only repeated

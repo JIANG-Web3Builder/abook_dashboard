@@ -23,10 +23,13 @@ from app.avg_profit import build_avg_profit_filter
 from app.config import load_env_file
 from app.martingale import build_martingale_filter
 from app.models import AnalysisPeriod, AnalysisRequest, AnalysisRules
-from app.r4 import build_r4_filter
 from app.repository import ClickHouseRepository
 from app.risk import build_local_risk_filter
-from app.service import build_two_stage_payload, _leverage_filter_pass
+from app.service import (
+    _leverage_filter_pass,
+    _long_trades_ratio_pass,
+    build_two_stage_payload,
+)
 
 
 @dataclass(frozen=True)
@@ -35,31 +38,27 @@ class RuleCombo:
     min_win_rate: float
     min_profit_factor: float
     min_payoff_ratio: float
+    min_long_trades_ratio: float
+    max_long_trades_ratio: float
     max_top1_day_profit_contribution: float
     max_leverage_p95_ratio: float
     max_high_leverage_holding_seconds: float
-    enable_r4: bool
-    r4_min_passing_weeks: int
 
 
 @dataclass
 class Candidate:
     selection: dict[str, Any]
     validation_pnl: float
-    enrichment_r4_pass: bool
-    r4_passing_weeks: int
     martingale_blocked: bool
 
 
 def _load_rows(request: AnalysisRequest) -> tuple[list[dict[str, Any]], Any]:
     risk_filter = build_local_risk_filter(request)
-    r4_snapshot = build_r4_filter(request)
     martingale_snapshot = build_martingale_filter(request)
     avg_profit_snapshot = build_avg_profit_filter(request)
     repository = ClickHouseRepository()
     overview_rows = repository.fetch_analysis(request)
     rows = martingale_snapshot.enrich_rows(risk_filter.snapshot.enrich_rows(overview_rows))
-    rows = r4_snapshot.enrich_rows(rows)
     rows = avg_profit_snapshot.enrich_rows(rows)
     return rows, martingale_snapshot
 
@@ -69,15 +68,7 @@ def _build_candidates(
     request: AnalysisRequest,
     martingale_snapshot: Any,
 ) -> list[Candidate]:
-    enrichment_r4: dict[tuple[str, int], tuple[bool, int]] = {}
-    for row in rows:
-        key = (str(row["platform"]), int(row["login"]))
-        if key not in enrichment_r4:
-            enrichment_r4[key] = (
-                bool(row.get("r4_pass", False)),
-                int(row.get("r4_passing_weeks", 0) or 0),
-            )
-
+    # Wide-open routing gates so each combo can re-score in memory.
     payload = build_two_stage_payload(
         rows,
         overview_rows=rows,
@@ -89,28 +80,22 @@ def _build_candidates(
         min_win_rate=0.0,
         min_profit_factor=0.0,
         min_payoff_ratio=0.0,
+        min_long_trades_ratio=0.0,
+        max_long_trades_ratio=1.0,
         max_top1_day_profit_contribution=1.0,
         max_leverage_p95_ratio=1e12,
         max_high_leverage_holding_seconds=0.0,
         martingale_snapshot=martingale_snapshot,
         excluded_martingale_levels=["extreme", "high", "medium", "low"],
-        enable_r4=False,
-        r4_min_passing_weeks=1,
     )
-    candidates: list[Candidate] = []
-    for account in payload["accounts"]:
-        key = (str(account["platform"]), int(account["login"]))
-        r4_pass, r4_weeks = enrichment_r4.get(key, (False, 0))
-        candidates.append(
-            Candidate(
-                selection=account["selection"],
-                validation_pnl=float(account["validation"]["client_net_pnl"]),
-                enrichment_r4_pass=r4_pass,
-                r4_passing_weeks=r4_weeks,
-                martingale_blocked=bool(account.get("martingale_blocked")),
-            )
+    return [
+        Candidate(
+            selection=account["selection"],
+            validation_pnl=float(account["validation"]["client_net_pnl"]),
+            martingale_blocked=bool(account.get("martingale_blocked")),
         )
-    return candidates
+        for account in payload["accounts"]
+    ]
 
 
 def _score_combo(candidates: list[Candidate], combo: RuleCombo) -> dict[str, Any]:
@@ -122,29 +107,21 @@ def _score_combo(candidates: list[Candidate], combo: RuleCombo) -> dict[str, Any
         if item.martingale_blocked:
             continue
         selection = item.selection
-        normal_pass = (
+        if not (
             selection["trade_count"] >= combo.min_trades
             and (selection["profit_factor"] is None or selection["profit_factor"] > combo.min_profit_factor)
             and selection["win_rate"] >= combo.min_win_rate
             and selection["payoff_ratio"] >= combo.min_payoff_ratio
+            and _long_trades_ratio_pass(
+                selection, combo.min_long_trades_ratio, combo.max_long_trades_ratio
+            )
             and selection["top_positive_day_concentration"] < combo.max_top1_day_profit_contribution
             and _leverage_filter_pass(
                 selection,
                 combo.max_leverage_p95_ratio,
                 combo.max_high_leverage_holding_seconds,
             )
-        )
-        r4_pass = bool(
-            combo.enable_r4
-            and item.enrichment_r4_pass
-            and item.r4_passing_weeks >= combo.r4_min_passing_weeks
-            and _leverage_filter_pass(
-                selection,
-                combo.max_leverage_p95_ratio,
-                combo.max_high_leverage_holding_seconds,
-            )
-        )
-        if not (normal_pass or r4_pass):
+        ):
             continue
         pnl = item.validation_pnl
         abook_pnl += pnl
@@ -167,24 +144,30 @@ def _grid() -> Iterable[RuleCombo]:
     win_rates = [0.45, 0.50, 0.55, 0.60]
     profit_factors = [1.0, 1.1, 1.25, 1.4, 1.5]
     payoff_ratios = [0.4, 0.5, 0.6, 0.8]
+    long_bands = [
+        (0.40, 0.60),
+        (0.35, 0.65),
+        (0.30, 0.70),
+        (0.45, 0.55),
+        (0.00, 1.00),
+    ]
     top1 = [0.20, 0.25, 0.30, 0.40, 0.50]
     leverage = [500, 1000, 2000, 5000]
-    hold_seconds = [60.0]
-    r4_opts = [(True, 1), (True, 2), (False, 1)]
+    hold_seconds = [60.0, 300.0]
     for values in itertools.product(
-        trades, win_rates, profit_factors, payoff_ratios, top1, leverage, hold_seconds, r4_opts
+        trades, win_rates, profit_factors, payoff_ratios, long_bands, top1, leverage, hold_seconds
     ):
-        t, wr, pf, po, t1, lev, hold, (enable_r4, weeks) = values
+        t, wr, pf, po, (long_min, long_max), t1, lev, hold = values
         yield RuleCombo(
             min_trades=t,
             min_win_rate=wr,
             min_profit_factor=pf,
             min_payoff_ratio=po,
+            min_long_trades_ratio=long_min,
+            max_long_trades_ratio=long_max,
             max_top1_day_profit_contribution=t1,
             max_leverage_p95_ratio=float(lev),
             max_high_leverage_holding_seconds=hold,
-            enable_r4=enable_r4,
-            r4_min_passing_weeks=weeks,
         )
 
 
@@ -192,7 +175,7 @@ def main() -> int:
     load_env_file()
     request = AnalysisRequest(
         selection=AnalysisPeriod(start=date(2026, 5, 1), end=date(2026, 6, 30)),
-        validation=AnalysisPeriod(start=date(2026, 7, 1), end=date(2026, 7, 16)),
+        validation=AnalysisPeriod(start=date(2026, 7, 1), end=date(2026, 7, 22)),
         platforms=["mt4", "mt5", "hh_mt5"],
         rules=AnalysisRules(),
         personal_candidate_list=False,
@@ -238,6 +221,10 @@ def main() -> int:
         "chosen": chosen,
         "qualifying_count": len(qualifying),
         "top10": (qualifying[:10] if qualifying else ([best] if best else [])),
+        "window": {
+            "selection": "2026-05-01..2026-06-30",
+            "validation": "2026-07-01..2026-07-22",
+        },
     }
 
     if chosen is not None:
@@ -258,13 +245,13 @@ def main() -> int:
             min_win_rate=rules.min_win_rate,
             min_profit_factor=rules.min_profit_factor,
             min_payoff_ratio=rules.min_payoff_ratio,
+            min_long_trades_ratio=rules.min_long_trades_ratio,
+            max_long_trades_ratio=rules.max_long_trades_ratio,
             max_top1_day_profit_contribution=rules.max_top1_day_profit_contribution,
             max_leverage_p95_ratio=rules.max_leverage_p95_ratio,
             max_high_leverage_holding_seconds=rules.max_high_leverage_holding_seconds,
             martingale_snapshot=martingale_snapshot,
             excluded_martingale_levels=rules.excluded_martingale_levels,
-            enable_r4=rules.enable_r4,
-            r4_min_passing_weeks=rules.r4_min_passing_weeks,
         )
         abook = [a for a in verified["accounts"] if a["book"] == "abook"]
         verified_pnl = round(sum(float(a["validation"]["client_net_pnl"]) for a in abook), 2)
@@ -280,7 +267,7 @@ def main() -> int:
                 flush=True,
             )
 
-    out_path = ROOT / "docs" / "analysis" / "2026-07-20-july-pnl-parameter-sweep.json"
+    out_path = ROOT / "docs" / "analysis" / "2026-07-23-july-pnl-parameter-sweep.json"
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(out, indent=2, ensure_ascii=False) + "\n")
     print(json.dumps({"evaluated": evaluated, "chosen": chosen, "best": best}, indent=2, ensure_ascii=False))

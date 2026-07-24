@@ -15,6 +15,7 @@ import clickhouse_connect
 
 from app.config import get_settings, load_env_file
 from app.exposure import build_unmatched_open_events, reconstruct_peak_exposure
+from app.query_client import LocalClientAdapter
 from app.queries import ALLOWED_PLATFORMS, USER_SOURCE_SQL
 from app.risk import RISK_CALCULATION_VERSION, snapshot_path
 
@@ -318,17 +319,20 @@ def _fetch_raw_open_deal_rows(
 
 def build_snapshot(selection_start: str, selection_end: str, platforms: list[str]) -> dict:
     settings = get_settings()
-    if not settings.configured:
+    if settings.data_source == "remote" and not settings.configured:
         raise RuntimeError("CLICKHOUSE_PASSWORD is not configured")
     selected = sorted(set(platforms) & ALLOWED_PLATFORMS)
-    client = clickhouse_connect.get_client(
-        host=settings.clickhouse_host,
-        port=settings.clickhouse_port,
-        username=settings.clickhouse_user,
-        password=settings.clickhouse_password,
-        database=settings.clickhouse_database,
-        secure=settings.clickhouse_secure,
-    )
+    if settings.data_source == "local":
+        client = LocalClientAdapter(settings.warehouse_path)
+    else:
+        client = clickhouse_connect.get_client(
+            host=settings.clickhouse_host,
+            port=settings.clickhouse_port,
+            username=settings.clickhouse_user,
+            password=settings.clickhouse_password,
+            database=settings.clickhouse_database,
+            secure=settings.clickhouse_secure,
+        )
     users_query = f"""
     SELECT platform, login, any(`group`) AS account_group
     FROM {USER_SOURCE_SQL} AS user_source

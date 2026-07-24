@@ -22,22 +22,22 @@ def test_default_strategy_filters_match_july_tuned_profile_without_monthly_pnl_g
     assert request.rules.min_trades == 75
     assert request.rules.min_active_days == 0
     assert request.rules.require_selection_monthly_positive is False
-    assert request.rules.enable_r4 is False
-    assert request.rules.r4_min_passing_weeks == 1
     assert request.rules.min_profit_factor == 1.25
-    assert request.rules.min_payoff_ratio == 0.4
+    assert request.rules.min_payoff_ratio == 0.6
     assert request.rules.min_avg_daily_profit == 0.0
     assert request.selection.start.isoformat() == "2026-05-01"
-    assert request.validation.end.isoformat() == "2026-07-16"
+    assert request.validation.end.isoformat() == "2026-07-22"
     assert request.rules.min_positive_month_rate == 0.5  # legacy field retained but ignored by routing
     assert request.rules.max_top1_day_profit_contribution == 0.3
     assert request.rules.max_daily_profit_month_contribution == 0.6
-    assert request.rules.max_leverage_p95_ratio == 5000.0
-    assert request.rules.max_peak_leverage_ratio == 5000.0
-    assert request.rules.max_high_leverage_holding_seconds == 300.0
+    assert request.rules.max_leverage_p95_ratio == 2000.0
+    assert request.rules.max_peak_leverage_ratio == 2000.0
+    assert request.rules.max_high_leverage_holding_seconds == 60.0
     assert request.rules.min_direction_day_rate_lower_bound == 0.55
     assert request.rules.min_stability_score == 70
     assert request.rules.min_win_rate == 0.5
+    assert request.rules.min_long_trades_ratio == 0.3
+    assert request.rules.max_long_trades_ratio == 0.7
     assert request.rules.min_selection_monthly_consistency == 0.0
     assert request.personal_candidate_list is False
     assert request.news_candidate_list is False
@@ -62,6 +62,16 @@ def test_analysis_request_accepts_separate_selection_and_validation_rules():
 
     assert request.rules.min_trades == 30
     assert request.rules.min_active_days == 8
+
+
+def test_long_trades_ratio_range_is_configurable_and_ordered():
+    request = AnalysisRequest(rules={"min_long_trades_ratio": 0.35, "max_long_trades_ratio": 0.65})
+
+    assert request.rules.min_long_trades_ratio == 0.35
+    assert request.rules.max_long_trades_ratio == 0.65
+
+    with pytest.raises(ValidationError):
+        AnalysisRequest(rules={"min_long_trades_ratio": 0.7, "max_long_trades_ratio": 0.6})
 
 
 @pytest.mark.parametrize("payload", [

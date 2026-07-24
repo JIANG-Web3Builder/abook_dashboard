@@ -4,6 +4,16 @@ FastAPI 后端 + Vue 3/ECharts 前端，用于使用 5–6 月数据筛选用户
 
 ## 运行
 
+Dashboard 默认从本地 Warehouse 读取，验证期或筛选规则变化时只查询本地 Parquet，不会在页面请求中刷新远程数据库。数据刷新作为独立 CLI 运行：
+
+```bash
+.venv/bin/python scripts/refresh_local_data.py \
+  --selection-start 2026-05-01 --selection-end 2026-06-30 \
+  --validation-start 2026-07-01 --validation-end 2026-07-22
+```
+
+保存结构、覆盖范围、历史冻结策略和故障恢复方式见 [`data/README.md`](/Users/jianghe/abook_hedging/data/README.md)。Dashboard 可通过 `GET /api/warehouse/status` 查看本地 Warehouse 状态；若范围未覆盖，先在终端刷新数据。
+
 ### Phase 0–6 升级功能
 
 马丁快照探查和构建：
@@ -34,11 +44,9 @@ cd /Users/jianghe/abook_hedging && ./run_dashboard.sh
 首次运行前，把本地 ClickHouse 配置写入被 Git 忽略的 `.env`（可参考 `.env.example`）。脚本会自动加载 `.env` 并启动服务。
 打开 http://localhost:8000。生产环境请使用只读 ClickHouse 账号，并通过密钥管理注入 `CLICKHOUSE_PASSWORD`。
 
-当前 Abook 默认路由规则为：筛选期总交易数 `>= 75`、胜率 `>= 50%`、`Profit Factor > 1.25`、盈亏比 `>= 0.4`、Top1 日利润贡献率 `< 30%`、用户杠杆率 P95 `<= 5000`，并执行确认式马丁硬拦截。马丁快照同时保留宽松候选和完整确认证据：只有至少两个不同 7 日窗口命中完整 `confirmed_gate` 的用户，且其等级在排除列表内，才进入马丁硬拦截；单窗口 extreme 或只命中宽松 `gate` 的用户标记为“疑似马丁”，仍参与普通 Abook 规则。筛选期总客户净 P&L、5 月/6 月单月客户净 P&L、活跃交易天数、平均日净 P&L、盈利月份占比、月度一致性、日盈利率 95% 下限、单月日利润贡献率、稳定性评分和 `avg_profit` 最低值不再作为 Abook 路由条件；这些 P&L 和稳定性指标只用于分析展示及后续样本外验证。其他未通过 Abook 的账户统一进入 Bbook。账户没有亏损交易时，PF 在筛选上视为无穷大，API 中以 `null` 表示，避免 JSON 非法数值。
+当前 Abook 默认路由规则为：筛选期总交易数 `>= 75`、胜率 `>= 50%`、`Profit Factor > 1.25`、盈亏比 `>= 0.6`、Long 交易比例 `0.3–0.7`（Long 订单数 / Long 与 Short 订单总数）、Top1 日利润贡献率 `< 30%`、用户杠杆率 P95 `<= 2000`（超过时中位持仓 `<= 60` 秒可例外），并执行确认式马丁硬拦截。马丁快照同时保留宽松候选和完整确认证据：只有至少两个不同 7 日窗口命中完整 `confirmed_gate` 的用户，且其等级在排除列表内，才进入马丁硬拦截；单窗口 extreme 或只命中宽松 `gate` 的用户标记为“疑似马丁”，仍参与普通 Abook 规则。筛选期总客户净 P&L、5 月/6 月单月客户净 P&L、活跃交易天数、平均日净 P&L、盈利月份占比、月度一致性、日盈利率 95% 下限、单月日利润贡献率、稳定性评分和 `avg_profit` 最低值不再作为 Abook 路由条件；这些 P&L 和稳定性指标只用于分析展示及后续样本外验证。其他未通过 Abook 的账户统一进入 Bbook。账户没有亏损交易时，PF 在筛选上视为无穷大，API 中以 `null` 表示，避免 JSON 非法数值。
 
-这组默认值是在当前 5–6 月筛选、7 月 1–16 日验证快照上复核得到的候选组合：94 个 Abook 用户，7 月客户净 P&L 约 `+25,236 USD`，其中 48 个盈利、30 个亏损。路由关闭默认 R4 通道，杠杆率 P95 `<= 5000`、高杠杆持仓例外 `300s`、盈亏比 `>= 0.4`；R4 仍可在侧栏手动开启。它是样本内寻优结果，不能视为未来收益保证；上线前应在新的完整月份重新复核。详见 `docs/analysis/2026-07-21-july-pnl-over20k.md`。
-
-R4 是独立于普通规则的 Abook 通道，只使用筛选期（默认 5–6 月）的 `7D_SLIDING` 持仓时长桶数据，不使用 7 月数据。当前运行阈值为：软对齐、主战场交易占比 `>= 35%`、整体胜率 `>= 55%`、总交易数 `>= 20`、主战场交易数 `>= 8`；通过 R4 且杠杆风险条件通过的用户可以进入 Abook，最终仍受马丁硬拦截。相比研究中的 38.1%/58.9%/10/5 阈值，当前版本减少精确分位点带来的脆弱性，同时提高样本门槛。R4 快照通过 `scripts/build_r4_snapshot.py` 生成，源文件默认是 `/Users/jianghe/holding_buckets/account_holding_buckets.csv`，也可使用 `ABOOK_R4_SOURCE_PATH` 和 `ABOOK_R4_SNAPSHOT_PATH` 覆盖。7 月才开始交易的用户不参与 R4 放行，只标记为“7月新用户”。默认关闭 R4；侧栏可按需启用。
+参数寻优文件记录的是 2026-07-23 旧远端数据快照上的候选组合：50 个 Abook 用户，7 月客户净 P&L `+30,856.63 USD`，其中 29 个盈利、14 个亏损。它是样本内寻优结果，不能视为未来收益保证，也不是当前 Warehouse 的固定验收值。远端历史数据可能继续修正；当前 Dashboard 应以 `data/warehouse/manifest.json` 的 generation 和本地实际计算结果为准。若要复现这组 50 人 / 30K 结果，必须保留当时对应的 Warehouse 与快照文件。详见 `docs/analysis/2026-07-23-july-pnl-parameter-sweep.json`。
 
 账户组中不区分大小写包含 `test` 或 `demo` 的账户是测试账号，所有查询、服务层聚合和账户详情都会硬性排除。7 月验证阶段会保留没有交易的筛选账户，并标记为“无交易”。
 
@@ -58,24 +66,24 @@ R4 是独立于普通规则的 Abook 通道，只使用筛选期（默认 5–6 
 ```json
 {
   "selection": {"start": "2026-05-01", "end": "2026-06-30"},
-  "validation": {"start": "2026-07-01", "end": "2026-07-16"},
+  "validation": {"start": "2026-07-01", "end": "2026-07-22"},
   "rules": {
     "min_trades": 75,
     "min_active_days": 0,
     "min_win_rate": 0.5,
     "min_profit_factor": 1.25,
-    "min_payoff_ratio": 0.4,
+    "min_payoff_ratio": 0.6,
+    "min_long_trades_ratio": 0.3,
+    "max_long_trades_ratio": 0.7,
     "min_avg_daily_profit": 0,
     "min_avg_profit": 0,
     "min_positive_month_rate": 0.5,
     "max_top1_day_profit_contribution": 0.3,
     "max_daily_profit_month_contribution": 0.6,
-    "max_leverage_p95_ratio": 5000,
-    "max_high_leverage_holding_seconds": 300,
+    "max_leverage_p95_ratio": 2000,
+    "max_high_leverage_holding_seconds": 60,
     "min_direction_day_rate_lower_bound": 0.55,
-    "min_stability_score": 70,
-    "enable_r4": false,
-    "r4_min_passing_weeks": 1
+    "min_stability_score": 70
   }
 }
 ```
@@ -88,21 +96,17 @@ R4 是独立于普通规则的 Abook 通道，只使用筛选期（默认 5–6 
 
 volume 沿用 dwd_matched_trades.volume 原始单位；不同品种可能有不同交易量精度（例如外汇数据可出现 1000），不能直接当作统一“手数”。Book 分析页面不统计或展示 turnover。风险快照的基准杠杆恢复为 `abs(dwd_matched_trades.turnover) / 当日最新余额`，按平仓日归集；同时用匹配订单的时间线重建并发未平仓敞口，最后取两者较高值用于风险筛选。若原始 deals 表存在，则再补上未被匹配订单覆盖的入场量；没有该表时会保留匹配订单估计，不把未知仓位当作 0。
 
-## 本地风险快照
+## 本地 Warehouse 与风险快照
 
-杠杆筛选不在每次页面请求中重新聚合。使用以下命令按筛选期生成本地快照：
+杠杆、平均盈利和马丁快照不在每次页面请求中重新聚合。统一使用独立 CLI 刷新 Warehouse 和三个快照：
 
 ```bash
-.venv/bin/python scripts/build_user_risk_snapshot.py --selection-start 2026-05-01 --selection-end 2026-06-30
-
-# 平均盈利快照（首次或日期范围变化时运行；运行网页时只读取本地 JSON）
-.venv/bin/python scripts/build_avg_profit_snapshot.py --selection-start 2026-05-01 --selection-end 2026-06-30
-
-# R4 快照（只用 5–6 月 7D_SLIDING 数据；运行网页时只读取本地 JSON）
-.venv/bin/python scripts/build_r4_snapshot.py --selection-start 2026-05-01 --selection-end 2026-06-30
+.venv/bin/python scripts/refresh_local_data.py \
+  --selection-start 2026-05-01 --selection-end 2026-06-30 \
+  --validation-start 2026-07-01 --validation-end 2026-07-22
 ```
 
-页面左侧“刷新全部数据”会按当前筛选期和平台重建风险、平均盈利、马丁、R4 四个本地快照。勾选 MT4 或其他新增平台后，必须点击一次“刷新全部数据”，否则旧快照只覆盖 `mt5/hh_mt5`；系统会把覆盖到的平台继续处理，并将未覆盖平台标记为 `partial`、暂留 Bbook，同时在左侧提示缺失平台，不再把整条筛选链路静默判成正常。四个快照全部成功后页面会自动重新计算；验证期结束日仍由页面日期控制。例如验证结束日设为 `2026-07-16`，主查询会读取至 7 月 16 日（排他上界为 2026-07-17）。如果 ClickHouse 尚未落库 7 月 16 日数据，覆盖信息会反映实际可用范围。
+页面左侧不再刷新远程数据；验证期结束日仍由页面日期控制，修改后点击“应用筛选与验证”即可从本地 Warehouse 查询。例如验证结束日设为 `2026-07-16`，主查询会读取至 7 月 16 日（排他上界为 2026-07-17）。如果范围还没有同步到本地，接口会提示先运行上述 CLI。
 
 快照默认写入 `data/user_risk_snapshot.json`，也可用 `ABOOK_RISK_SNAPSHOT_PATH` 覆盖路径。快照从 `risk.ods_mt4_daily_balance` 和 `risk.ods_mt5_daily_balance` 读取用户每日余额，用 `login + datetime` 建立余额序列，再将筛选期每个订单的平仓日匹配到该日及之前最新余额，使用每日 `abs(dwd_matched_trades.turnover)` / 当日余额计算成交额杠杆的平均值、峰值和 P95。MT4/MT5 的日期字符串统一按可解析的日期时间处理。`balance_prev_month` 仅作为旧快照兼容字段，新的参考值为 `balance_latest`；余额小于等于 0 或平仓日没有可匹配余额时不计算该日杠杆。SQL 会排除 group 中大小写不敏感包含 `test` 或 `demo` 的账户，例如 `real\\FPlive\\TEST_USD_ZO_BA_NT_H`、`demo\\HHdemo\\forexhh-USD`。该本地文件不会提交到 GitHub。
 

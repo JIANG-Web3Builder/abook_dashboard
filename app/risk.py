@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 from typing import Any, Iterable, Optional, TYPE_CHECKING
+from .warehouse import snapshot_generation_stale
 
 if TYPE_CHECKING:
     from .models import AnalysisRequest
@@ -188,7 +189,7 @@ def load_risk_snapshot(
     dates_match = payload.get("selection_start") == selection_start and payload.get("selection_end") == selection_end
     missing_platforms = tuple(sorted(set(requested_platforms) - set(snapshot_platforms)))
     version_match = payload.get("calculation_version") == RISK_CALCULATION_VERSION
-    status = "stale" if not dates_match or not version_match else "partial" if missing_platforms else "ready"
+    status = "stale" if not dates_match or not version_match or snapshot_generation_stale(payload, path=path, snapshot_name="risk") else "partial" if missing_platforms else "ready"
     records = tuple(payload.get("records", [])) if status in {"ready", "partial"} else tuple()
     return RiskSnapshot(
         path=path,

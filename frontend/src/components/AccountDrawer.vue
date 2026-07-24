@@ -2,7 +2,13 @@
 import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import * as echarts from 'echarts'
 import type { AccountDetailPayload, AccountRow } from '../types'
-const props = defineProps<{ account: AccountRow | null; detail: AccountDetailPayload | null; loading: boolean; error: string }>()
+const props = defineProps<{
+  account: AccountRow | null
+  detail: AccountDetailPayload | null
+  directionAccount?: Record<string, any> | null
+  loading: boolean
+  error: string
+}>()
 const emit = defineEmits<{ (event: 'close'): void }>()
 const entryMarkoutChart = ref<HTMLDivElement | null>(null)
 const exitMarkoutChart = ref<HTMLDivElement | null>(null)
@@ -17,6 +23,35 @@ function number(value: unknown): number {
 function format(value: unknown): string { return number(value).toFixed(2) }
 function percent(value: unknown): string { return `${(number(value) * 100).toFixed(1)}%` }
 function text(value: unknown): string { return value === null || value === undefined || value === '' ? '—' : String(value) }
+function ratio(value: unknown): string { return value === null || value === undefined ? '—' : percent(value) }
+function directionPhase(phase: string): any {
+  return props.detail?.direction_summary?.[phase] || {}
+}
+function directionMetric(phase: string, side: 'long' | 'short'): any {
+  return directionPhase(phase)[side] || {}
+}
+function directionPhaseLabel(phase: string): string {
+  return phase === 'selection' ? '筛选期' : '验证期'
+}
+function sampleStatusLabel(status: unknown): string {
+  return status === 'no_activity' ? '无该方向成交' : status === 'active' ? '有方向成交' : text(status)
+}
+function quadrantLabel(value: unknown): string {
+  const labels: Record<string, string> = {
+    both_pass: '双边过线', long_only_pass: '仅 Long 过线', short_only_pass: '仅 Short 过线',
+    neither_pass: '双边未过', insufficient_side: '一侧样本不足',
+  }
+  return labels[String(value)] || text(value)
+}
+function directionFlagLabel(value: unknown): string {
+  const labels: Record<string, string> = {
+    no_side_activity: '无方向成交', insufficient_side_sample: '方向样本不足',
+    profit_factor: 'PF 未达标', win_rate: '胜率未达标', payoff_ratio: '盈亏比未达标',
+    profit_concentration: 'Top1 日集中度过高', leverage_p95_ratio: '杠杆未通过',
+    martingale_hard_block: '马丁硬拦截',
+  }
+  return labels[String(value)] || String(value)
+}
 
 const concentrationItems = [
   ['max_profit_day_contribution', '最大盈利日贡献率'],
@@ -73,7 +108,7 @@ onBeforeUnmount(() => { entryChart?.dispose(); exitChart?.dispose() })
     <aside class="drawer" @click.stop>
       <span class="kicker">ACCOUNT DETAIL</span>
       <h2>{{ account.platform }} / {{ account.login }}</h2>
-      <p>{{ account.account_group }} · {{ account.book === 'abook' ? 'Abook' : 'Bbook' }} · {{ account.selection_source }}<span v-if="account.july_new_user"> · 7月新用户</span><span v-if="account.r4_pass"> · R4</span></p>
+      <p>{{ account.account_group }} · {{ account.book === 'abook' ? 'Abook' : 'Bbook' }} · {{ account.selection_source }}<span v-if="account.july_new_user"> · 7月新用户</span></p>
 
       <div class="detail-grid">
         <span>筛选期客户净 P&amp;L</span><b>{{ format(account.selection?.client_net_pnl) }}</b>
@@ -95,6 +130,38 @@ onBeforeUnmount(() => { entryChart?.dispose(); exitChart?.dispose() })
           <span>并发敞口杠杆 P95</span><b>{{ text(account.risk_concurrent_leverage_p95_ratio) }}</b>
         </template>
       </div>
+
+      <template v-if="detail?.direction_summary">
+        <h3>多空分向摘要</h3>
+        <div class="direction-drawer-summary">
+          <article v-for="phaseName in ['selection', 'validation']" :key="phaseName">
+            <h4>{{ directionPhaseLabel(phaseName) }}</h4>
+            <div class="detail-grid">
+              <span>Long 交易数</span><b>{{ number(directionMetric(phaseName, 'long').trade_count) }}</b>
+              <span>Short 交易数</span><b>{{ number(directionMetric(phaseName, 'short').trade_count) }}</b>
+              <span>Long 交易比例</span><b>{{ ratio(directionPhase(phaseName).long_trades_ratio) }}</b>
+              <span>Short 交易比例</span><b>{{ ratio(directionPhase(phaseName).short_trades_ratio) }}</b>
+              <span>Long 胜率</span><b>{{ ratio(directionMetric(phaseName, 'long').win_rate) }}</b>
+              <span>Short 胜率</span><b>{{ ratio(directionMetric(phaseName, 'short').win_rate) }}</b>
+              <span>Long PF / 盈亏比</span><b>{{ text(directionMetric(phaseName, 'long').profit_factor) }} / {{ text(directionMetric(phaseName, 'long').payoff_ratio) }}</b>
+              <span>Short PF / 盈亏比</span><b>{{ text(directionMetric(phaseName, 'short').profit_factor) }} / {{ text(directionMetric(phaseName, 'short').payoff_ratio) }}</b>
+              <span>Long matched P&amp;L</span><b>{{ format(directionMetric(phaseName, 'long').side_pnl) }}</b>
+              <span>Short matched P&amp;L</span><b>{{ format(directionMetric(phaseName, 'short').side_pnl) }}</b>
+              <span>方向样本状态</span><b>{{ sampleStatusLabel(directionMetric(phaseName, 'long').sample_status) }} · {{ sampleStatusLabel(directionMetric(phaseName, 'short').sample_status) }}</b>
+            </div>
+          </article>
+        </div>
+      </template>
+
+      <template v-if="directionAccount">
+        <h3>最近一次已运行分向筛选结果</h3>
+        <div class="status-box ok">
+          <strong>{{ quadrantLabel(directionAccount.quadrant) }}</strong>
+          <span>Long {{ directionAccount.long_pass ? '过线' : '未过' }} · Short {{ directionAccount.short_pass ? '过线' : '未过' }}</span>
+          <span>共享闸门：杠杆 {{ directionAccount.shared_gates?.leverage_pass ? '通过' : '未通过' }} · 马丁 {{ directionAccount.shared_gates?.martingale_hard_block ? '硬拦截' : '未拦截' }}</span>
+          <span v-if="[...(directionAccount.selection_flags_long || []), ...(directionAccount.selection_flags_short || [])].length">未过原因：{{ [...(directionAccount.selection_flags_long || []), ...(directionAccount.selection_flags_short || [])].map(directionFlagLabel).join('、') }}</span>
+        </div>
+      </template>
 
       <h3>马丁五层命中</h3>
       <div class="layer-grid"><span v-for="layer in ['layer1', 'layer2', 'layer3', 'layer4', 'layer5']" :key="layer" :class="account.martingale_layer_hits?.[layer] ? 'hit' : ''">{{ layer }} {{ account.martingale_layer_hits?.[layer] ? '命中' : '未命中' }}</span></div>

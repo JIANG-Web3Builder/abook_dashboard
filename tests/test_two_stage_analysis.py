@@ -3,7 +3,7 @@ from decimal import Decimal
 import json
 import math
 
-from app.service import _account_period_metrics, build_selection_funnel, build_two_stage_payload
+from app.service import _account_period_metrics, _long_trades_ratio_pass, build_selection_funnel, build_two_stage_payload
 
 
 def row(login, month, *, group="real\\FPlive", trades=0, wins=0, losses=0,
@@ -11,13 +11,19 @@ def row(login, month, *, group="real\\FPlive", trades=0, wins=0, losses=0,
         active_days=0, daily_sum=0, volume=0, turnover=0,
         daily_positive_days=None, daily_negative_days=None, daily_flat_days=None,
         daily_positive_sum=None, daily_negative_sum=None, max_positive_day=None,
-        daily_stddev=0, daily_abs_sum=None, source_min=None, source_max=None):
+        daily_stddev=0, daily_abs_sum=None, source_min=None, source_max=None,
+        long_trades=None, short_trades=None):
     daily_positive_days = active_days if daily_positive_days is None else daily_positive_days
     daily_negative_days = 0 if daily_negative_days is None else daily_negative_days
     daily_flat_days = 0 if daily_flat_days is None else daily_flat_days
     daily_positive_sum = max(daily_sum, 0) if daily_positive_sum is None else daily_positive_sum
     daily_negative_sum = min(daily_sum, 0) if daily_negative_sum is None else daily_negative_sum
     max_positive_day = daily_positive_sum if max_positive_day is None else max_positive_day
+    if long_trades is None and short_trades is None:
+        long_trades = trades // 2
+        short_trades = trades - long_trades
+    elif long_trades is None or short_trades is None:
+        raise ValueError("long_trades and short_trades must be provided together")
     return {
         "platform": "mt5",
         "login": login,
@@ -55,8 +61,8 @@ def row(login, month, *, group="real\\FPlive", trades=0, wins=0, losses=0,
         "turnover": Decimal(str(turnover)),
         "avg_holding_seconds": Decimal("60"),
         "median_holding_seconds": Decimal("60"),
-        "long_trades": wins,
-        "short_trades": losses,
+        "long_trades": long_trades,
+        "short_trades": short_trades,
         "symbols_traded": 1,
     }
 
@@ -113,6 +119,50 @@ def test_selection_funnel_does_not_compare_full_account_dicts_for_membership():
 
     assert funnel["stages"][1]["count"] == 1
     assert funnel["stages"][1]["drop_reasons"] == {"insufficient_sample": 1}
+
+
+def test_long_trades_ratio_uses_long_plus_short_and_inclusive_bounds():
+    rows = [
+        row(10, "05", trades=10, wins=5, losses=5, long_trades=5, short_trades=5, market=100, net=100, gross_wins=100, active_days=5, daily_sum=100),
+        row(11, "05", trades=10, wins=6, losses=4, long_trades=6, short_trades=4, market=100, net=100, gross_wins=100, active_days=5, daily_sum=100),
+        row(12, "05", trades=10, wins=7, losses=3, long_trades=7, short_trades=3, market=100, net=100, gross_wins=100, active_days=5, daily_sum=100),
+    ]
+    result = build_two_stage_payload(
+        rows,
+        selection_start="2026-05-01", selection_end="2026-05-31",
+        validation_start="2026-07-01", validation_end="2026-07-02",
+        min_trades=0, min_win_rate=0, min_profit_factor=0, min_payoff_ratio=0,
+        min_long_trades_ratio=0.4, max_long_trades_ratio=0.6,
+        max_top1_day_profit_contribution=2, min_direction_day_rate_lower_bound=0,
+        min_stability_score=0,
+    )
+
+    accounts = {account["login"]: account for account in result["population_accounts"]}
+    assert accounts[10]["selection"]["long_trades_ratio"] == 0.5
+    assert accounts[11]["selection"]["long_trades_ratio"] == 0.6
+    assert accounts[12]["selection"]["long_trades_ratio"] == 0.7
+    assert accounts[10]["book"] == "abook"
+    assert accounts[11]["book"] == "abook"
+    assert accounts[12]["book"] == "bbook"
+    assert "long_trades_ratio" in accounts[12]["selection_flags"]
+    assert result["funnel"]["stages"][2]["name"] == "direction_balance_passed"
+    assert result["funnel"]["stages"][2]["drop_reasons"] == {"long_trades_ratio": 1}
+
+
+def test_long_trades_ratio_denominator_is_not_matched_trade_count():
+    item = row(13, "05", trades=10, wins=7, losses=0, long_trades=7, short_trades=0, market=100, net=100, gross_wins=100, active_days=5, daily_sum=100)
+    item["long_trades"] = 7
+    item["short_trades"] = 0
+    metrics = _account_period_metrics([item], {"platform": "mt5", "login": 13, "account_group": "real"}, phase="selection")
+
+    assert metrics["long_trades_ratio"] == 1.0
+
+
+def test_long_trades_ratio_helper_includes_configured_boundaries():
+    assert _long_trades_ratio_pass({"long_trades_ratio": 0.4}, 0.4, 0.6)
+    assert _long_trades_ratio_pass({"long_trades_ratio": 0.6}, 0.4, 0.6)
+    assert not _long_trades_ratio_pass({"long_trades_ratio": 0.39}, 0.4, 0.6)
+    assert not _long_trades_ratio_pass({"long_trades_ratio": 0.61}, 0.4, 0.6)
 
 
 def test_two_stage_payload_builds_daily_book_series_and_merges_observation_into_bbook():
@@ -411,10 +461,10 @@ def test_two_stage_analysis_requires_strict_top1_contribution_and_skips_leverage
 
 def test_abook_selection_uses_trade_quality_but_not_active_days_or_removed_quality_gates():
     rows = [
-        row(101, "05", trades=1, wins=1, losses=0, market=10, net=10,
-            gross_wins=10, gross_losses=0, active_days=1, daily_sum=10),
-        row(101, "06", trades=1, wins=1, losses=0, market=12, net=12,
-            gross_wins=12, gross_losses=0, active_days=1, daily_sum=12),
+            row(101, "05", trades=1, wins=1, losses=0, long_trades=1, short_trades=1, market=10, net=10,
+                gross_wins=10, gross_losses=0, active_days=1, daily_sum=10),
+            row(101, "06", trades=1, wins=1, losses=0, long_trades=1, short_trades=1, market=12, net=12,
+                gross_wins=12, gross_losses=0, active_days=1, daily_sum=12),
     ]
 
     result = build_two_stage_payload(
@@ -444,10 +494,10 @@ def test_abook_selection_uses_trade_quality_but_not_active_days_or_removed_quali
 
 def test_abook_selection_does_not_require_positive_selection_months():
     rows = [
-        row(102, "05", trades=1, wins=1, losses=0, market=10, net=10,
-            gross_wins=10, gross_losses=0, active_days=1, daily_sum=10),
-        row(102, "06", trades=1, wins=1, losses=0, market=-5, net=-5,
-            gross_wins=10, gross_losses=0, active_days=1, daily_sum=-5),
+            row(102, "05", trades=1, wins=1, losses=0, long_trades=1, short_trades=1, market=10, net=10,
+                gross_wins=10, gross_losses=0, active_days=1, daily_sum=10),
+            row(102, "06", trades=1, wins=1, losses=0, long_trades=1, short_trades=1, market=-5, net=-5,
+                gross_wins=10, gross_losses=0, active_days=1, daily_sum=-5),
     ]
 
     result = build_two_stage_payload(
@@ -480,41 +530,6 @@ def test_abook_selection_does_not_require_positive_selection_months():
     assert "selection_period_client_net_pnl" in result["rules"]["removed_selection_rules"]
 
 
-def test_r4_is_an_independent_selection_channel_for_may_june_data_only():
-    rows = [
-        row(103, "05", trades=5, wins=1, losses=4, market=-100, net=-100,
-            gross_wins=10, gross_losses=-110, active_days=1, daily_sum=-100),
-        row(103, "06", trades=5, wins=1, losses=4, market=-100, net=-100,
-            gross_wins=10, gross_losses=-110, active_days=1, daily_sum=-100),
-    ]
-    for item in rows:
-        item.update({
-            "r4_pass": True,
-            "r4_passing_weeks": 1,
-            "r4_win_rate": 0.589,
-            "r4_primary_trade_pct": 0.381,
-        })
-
-    result = build_two_stage_payload(
-        rows,
-        selection_start="2026-05-01",
-        selection_end="2026-06-30",
-        validation_start="2026-07-01",
-        validation_end="2026-07-02",
-        min_trades=20,
-        min_win_rate=0.9,
-        min_profit_factor=2,
-        min_payoff_ratio=2,
-        enable_r4=True,
-        r4_min_passing_weeks=1,
-    )
-
-    account = result["accounts"][0]
-    assert account["book"] == "abook"
-    assert account["selection_source"] == "r4"
-    assert account["r4_pass"] is True
-
-
 def test_july_new_user_is_tagged_but_not_routed_by_new_user_status():
     rows = [
         row(104, "05", trades=0, wins=0, losses=0, market=0, net=0),
@@ -539,7 +554,7 @@ def test_july_new_user_is_tagged_but_not_routed_by_new_user_status():
     account = result["accounts"][0]
     assert account["july_new_user"] is True
     assert account["book"] == "bbook"
-    assert account["selection_source"] != "r4"
+    assert account["selection_source"] == "abook_rules_failed"
 
 
 def test_two_stage_analysis_allows_short_holding_high_leverage_exception_only():

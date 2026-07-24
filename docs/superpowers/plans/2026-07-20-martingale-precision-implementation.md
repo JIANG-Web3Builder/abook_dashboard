@@ -11,7 +11,7 @@
 ## Global Constraints
 
 - 只使用选择期窗口，不使用 7 月验证期数据。
-- 不改变 R4、杠杆、P&L 筛选条件和账户详情功能。
+- 不改变杠杆、P&L 筛选条件和账户详情功能。
 - 不把单个窗口异常直接升级为 confirmed 或硬拦截。
 - 现有 `martingale_status` 字段继续表示快照状态，新增字段使用 `martingale_detection_status`。
 - 快照缺失、损坏或过期时继续保持现有安全路由：不得解释为“没有马丁用户”。

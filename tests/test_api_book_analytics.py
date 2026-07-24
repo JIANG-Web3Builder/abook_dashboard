@@ -41,7 +41,6 @@ def test_population_account_response_keeps_ui_metrics_without_heavy_diagnostics(
         "martingale_risk_level": None,
         "risk_leverage_p95_ratio": 100,
         "martingale_record": {"large": "diagnostic"},
-        "r4_record": {"large": "diagnostic"},
     }
 
     compact = _compact_population_account(account)
@@ -49,7 +48,6 @@ def test_population_account_response_keeps_ui_metrics_without_heavy_diagnostics(
     assert compact["platform"] == "mt5"
     assert compact["selection"]["client_net_pnl"] == 10
     assert "martingale_record" not in compact
-    assert "r4_record" not in compact
 
 
 def test_book_analytics_reuses_overview_analysis_session(tmp_path, monkeypatch):
@@ -57,7 +55,6 @@ def test_book_analytics_reuses_overview_analysis_session(tmp_path, monkeypatch):
         "ABOOK_RISK_SNAPSHOT_PATH",
         "ABOOK_MARTINGALE_SNAPSHOT_PATH",
         "ABOOK_AVG_PROFIT_SNAPSHOT_PATH",
-        "ABOOK_R4_SNAPSHOT_PATH",
     ):
         monkeypatch.setenv(name, str(tmp_path / f"{name}.json"))
 
@@ -98,7 +95,6 @@ def test_analysis_defers_daily_pnl_query_until_book_analytics(tmp_path, monkeypa
         "ABOOK_RISK_SNAPSHOT_PATH",
         "ABOOK_MARTINGALE_SNAPSHOT_PATH",
         "ABOOK_AVG_PROFIT_SNAPSHOT_PATH",
-        "ABOOK_R4_SNAPSHOT_PATH",
     ):
         monkeypatch.setenv(name, str(tmp_path / f"{name}.json"))
 
@@ -129,7 +125,6 @@ def test_book_analytics_skips_symbol_queries_when_symbols_are_not_requested(tmp_
         "ABOOK_RISK_SNAPSHOT_PATH",
         "ABOOK_MARTINGALE_SNAPSHOT_PATH",
         "ABOOK_AVG_PROFIT_SNAPSHOT_PATH",
-        "ABOOK_R4_SNAPSHOT_PATH",
     ):
         monkeypatch.setenv(name, str(tmp_path / f"{name}.json"))
 

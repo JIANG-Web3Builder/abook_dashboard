@@ -26,21 +26,6 @@ class AnalysisPeriod(BaseModel):
         return self
 
 
-class SnapshotRefreshRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    selection: AnalysisPeriod
-    platforms: List[str]
-
-    @field_validator("platforms")
-    @classmethod
-    def validate_platforms(cls, value: List[str]) -> List[str]:
-        allowed = {"mt4", "mt5", "hh_mt5"}
-        if not value or set(value) - allowed:
-            raise ValueError("platforms must contain only mt4, mt5, or hh_mt5")
-        return sorted(set(value))
-
-
 class AnalysisRules(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -49,17 +34,19 @@ class AnalysisRules(BaseModel):
     min_active_days: int = Field(default=0, ge=0)
     min_win_rate: float = Field(default=0.5, ge=0, le=1)
     min_profit_factor: float = Field(default=1.25, ge=0)
-    min_payoff_ratio: float = Field(default=0.4, ge=0)
+    min_payoff_ratio: float = Field(default=0.6, ge=0)
+    min_long_trades_ratio: float = Field(default=0.3, ge=0, le=1)
+    max_long_trades_ratio: float = Field(default=0.7, ge=0, le=1)
     min_avg_daily_profit: float = Field(default=0.0, ge=0)
     min_avg_profit: float = Field(default=0.0, ge=0)
     min_selection_monthly_consistency: float = Field(default=0.0, ge=0, le=1)
     min_positive_month_rate: float = Field(default=0.5, ge=0, le=1)
     max_top1_day_profit_contribution: float = Field(default=0.3, gt=0, le=1)
     max_daily_profit_month_contribution: float = Field(default=0.6, gt=0, le=1)
-    max_leverage_p95_ratio: float = Field(default=5000.0, gt=0)
+    max_leverage_p95_ratio: float = Field(default=2000.0, gt=0)
     # Kept for old clients; service decisions use max_leverage_p95_ratio.
-    max_peak_leverage_ratio: float = Field(default=5000.0, gt=0)
-    max_high_leverage_holding_seconds: float = Field(default=300.0, ge=0)
+    max_peak_leverage_ratio: float = Field(default=2000.0, gt=0)
+    max_high_leverage_holding_seconds: float = Field(default=60.0, ge=0)
     min_direction_day_rate_lower_bound: float = Field(default=0.55, ge=0, le=1)
     min_stability_score: float = Field(default=70.0, ge=0, le=100)
     high_confidence_trades: int = Field(default=100, ge=0)
@@ -70,10 +57,6 @@ class AnalysisRules(BaseModel):
     # Retained for old clients; monthly P&L is diagnostic/validation only and
     # can no longer gate Abook routing.
     require_selection_monthly_positive: bool = False
-    # Disabled by default: July 2026 validation sweep found R4 reduced Abook net P&L.
-    enable_r4: bool = False
-    r4_min_passing_weeks: int = Field(default=1, ge=1, le=2)
-
     @model_validator(mode="after")
     def sync_legacy_leverage_rule(self) -> "AnalysisRules":
         # Older clients only send max_peak_leverage_ratio. Treat that value as
@@ -84,6 +67,8 @@ class AnalysisRules(BaseModel):
             and "max_leverage_p95_ratio" not in self.model_fields_set
         ):
             self.max_leverage_p95_ratio = self.max_peak_leverage_ratio
+        if self.min_long_trades_ratio > self.max_long_trades_ratio:
+            raise ValueError("min_long_trades_ratio must be less than or equal to max_long_trades_ratio")
         return self
 
 
@@ -94,7 +79,7 @@ class AnalysisRequest(BaseModel):
         default_factory=lambda: AnalysisPeriod(start=date(2026, 5, 1), end=date(2026, 6, 30))
     )
     validation: AnalysisPeriod = Field(
-        default_factory=lambda: AnalysisPeriod(start=date(2026, 7, 1), end=date(2026, 7, 16))
+        default_factory=lambda: AnalysisPeriod(start=date(2026, 7, 1), end=date(2026, 7, 22))
     )
     platforms: List[str] = Field(default_factory=lambda: ["mt4", "mt5", "hh_mt5"])
     filters: AnalysisFilters = Field(default_factory=AnalysisFilters)
@@ -149,3 +134,10 @@ class BookAnalyticsRequest(BaseModel):
     abook_accounts: List[AccountKey] = Field(default_factory=list)
     analysis_token: Optional[str] = None
     include_symbols: bool = True
+
+
+class DirectionAnalyticsRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    analysis: AnalysisRequest
+    analysis_token: Optional[str] = None

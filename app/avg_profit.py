@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 from typing import Any, Iterable
+from .warehouse import snapshot_generation_stale
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -85,7 +86,7 @@ def load_avg_profit_snapshot(path: Path, selection_start: str, selection_end: st
     requested = tuple(sorted(str(value) for value in platforms))
     dates_match = payload.get("selection_start") == selection_start and payload.get("selection_end") == selection_end
     missing_platforms = tuple(sorted(set(requested) - set(snapshot_platforms)))
-    status = "stale" if not dates_match else "partial" if missing_platforms else "ready"
+    status = "stale" if not dates_match or snapshot_generation_stale(payload, path=path, snapshot_name="avg_profit") else "partial" if missing_platforms else "ready"
     records = tuple(payload.get("records", [])) if status in {"ready", "partial"} else tuple()
     return AvgProfitSnapshot(
         path=path,

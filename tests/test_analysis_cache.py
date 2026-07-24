@@ -1,6 +1,6 @@
 import time
 
-from app.analysis_cache import AnalysisSession, AnalysisSessionCache
+from app.analysis_cache import AnalysisSession, AnalysisSessionCache, ResultCache
 
 
 def _session(signature: str) -> AnalysisSession:
@@ -29,3 +29,13 @@ def test_analysis_session_cache_evicts_oldest_entry_when_full():
 
     assert cache.get(first, "first") is None
     assert cache.get(second, "second") is not None
+
+
+def test_result_cache_reuses_same_signature_and_expires_entries():
+    cache = ResultCache(max_entries=2, ttl_seconds=10)
+    value = {"accounts": [1]}
+
+    cache.put("signature-a", value)
+
+    assert cache.get("signature-a") == value
+    assert cache.get("signature-b") is None

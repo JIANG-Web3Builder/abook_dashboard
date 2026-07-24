@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import clickhouse_connect
 
 from app.config import get_settings, load_env_file
+from app.query_client import LocalClientAdapter
 from app.queries import ALLOWED_PLATFORMS
 from app.avg_profit import snapshot_path
 
@@ -32,17 +33,20 @@ def _choose(columns: set[str], candidates: tuple[str, ...], label: str) -> str:
 
 def build_snapshot(selection_start: str, selection_end: str, platforms: list[str]) -> dict:
     settings = get_settings()
-    if not settings.configured:
+    if settings.data_source == "remote" and not settings.configured:
         raise RuntimeError("CLICKHOUSE_PASSWORD is not configured")
     selected = sorted(set(platforms) & ALLOWED_PLATFORMS)
-    client = clickhouse_connect.get_client(
-        host=settings.clickhouse_host,
-        port=settings.clickhouse_port,
-        username=settings.clickhouse_user,
-        password=settings.clickhouse_password,
-        database=settings.clickhouse_database,
-        secure=settings.clickhouse_secure,
-    )
+    if settings.data_source == "local":
+        client = LocalClientAdapter(settings.warehouse_path)
+    else:
+        client = clickhouse_connect.get_client(
+            host=settings.clickhouse_host,
+            port=settings.clickhouse_port,
+            username=settings.clickhouse_user,
+            password=settings.clickhouse_password,
+            database=settings.clickhouse_database,
+            secure=settings.clickhouse_secure,
+        )
     schema = client.query(f"DESCRIBE TABLE {TABLE}")
     columns = {str(row[0]) for row in schema.result_rows}
     platform_col = _choose(columns, ("platform", "source_platform"), "platform")

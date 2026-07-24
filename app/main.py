@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
 import time
 from typing import Optional
 
@@ -9,23 +10,26 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from .analysis_cache import AnalysisSession, analysis_session_cache, request_signature
+from .analysis_cache import AnalysisSession, analysis_session_cache, direction_analytics_cache, request_signature
 from .martingale import build_martingale_filter, load_martingale_snapshot, snapshot_path
-from .avg_profit import build_avg_profit_filter
+from .avg_profit import build_avg_profit_filter, snapshot_path as avg_profit_snapshot_path
 from .book_analytics import build_book_analytics
+from .direction_analytics import build_direction_analytics_payload
 from .exports import render_abook_csv
-from .models import AnalysisRequest, BookAnalyticsRequest, FilterOptions, SnapshotRefreshRequest
+from .models import AnalysisRequest, BookAnalyticsRequest, DirectionAnalyticsRequest, FilterOptions
 from .personal_candidates import load_news_candidates, load_personal_candidates
-from .repository import ClickHouseRepository, RepositoryConfigurationError
-from .snapshot_refresh import refresh_snapshots
+from .config import get_settings
+from .repository import ClickHouseRepository, LocalWarehouseRepository, RepositoryConfigurationError
 from .risk import build_local_risk_filter
-from .r4 import build_r4_filter
+from .risk import snapshot_path as risk_snapshot_path
+from .warehouse import WarehouseCoverageError, load_manifest
 from .service import (
     build_account_detail_payload,
     build_analysis_payload,
     build_two_stage_payload,
     prepare_analysis_context,
 )
+from .account_detail import build_direction_summary
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -43,9 +47,25 @@ app.add_middleware(
 
 def get_repository() -> ClickHouseRepository:
     try:
-        return ClickHouseRepository()
+        settings = get_settings()
+        if settings.data_source == "local":
+            return LocalWarehouseRepository(settings)
+        return ClickHouseRepository(settings)
+    except WarehouseCoverageError as exc:
+        raise _coverage_http_exception(exc) from exc
     except RepositoryConfigurationError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+def _coverage_http_exception(exc: WarehouseCoverageError) -> HTTPException:
+    return HTTPException(
+        status_code=409,
+        detail={
+            "code": "warehouse_coverage_missing",
+            "message": "本地数据未覆盖当前分析范围，请先运行 scripts/refresh_local_data.py",
+            "missing": exc.missing,
+        },
+    )
 
 
 def _fetch_daily_rows(
@@ -114,25 +134,53 @@ def health() -> dict[str, str]:
     return {"status": "ok", "service": "abook-dashboard"}
 
 
-@app.post("/api/abook/refresh-snapshots")
-def refresh_snapshot_files(request: SnapshotRefreshRequest) -> dict:
-    result = refresh_snapshots(
-        request.selection.start.isoformat(),
-        request.selection.end.isoformat(),
-        request.platforms,
-    )
-    if result.get("status") != "ready":
-        raise HTTPException(
-            status_code=502,
-            detail=str(result.get("error", "snapshot refresh failed")),
-        )
-    return result
+@app.get("/api/warehouse/status")
+def warehouse_status() -> dict:
+    settings = get_settings()
+    if settings.data_source == "remote":
+        return {"source": "remote", "status": "remote"}
+    manifest = load_manifest(settings.warehouse_path / "manifest.json")
+    generation = manifest.get("generation")
+    snapshots = {}
+    for name, path in {
+        "risk": risk_snapshot_path(),
+        "avg_profit": avg_profit_snapshot_path(),
+        "martingale": snapshot_path(),
+    }.items():
+        if not path.exists():
+            snapshots[name] = {"status": "missing", "path": str(path)}
+            continue
+        try:
+            payload = json.loads(path.read_text())
+            snapshot_generation = payload.get("warehouse_generation")
+            status = "stale" if generation and snapshot_generation != generation else "ready"
+            snapshots[name] = {
+                "status": status,
+                "path": str(path),
+                "warehouse_generation": snapshot_generation,
+            }
+        except (OSError, ValueError):
+            snapshots[name] = {"status": "invalid", "path": str(path)}
+    return {
+        "source": "local",
+        "status": "ready" if generation else "missing",
+        "warehouse_path": str(settings.warehouse_path),
+        "generation": generation,
+        "updated_at": manifest.get("updated_at"),
+        "data_start": manifest.get("data_start"),
+        "data_end": manifest.get("data_end"),
+        "platforms": manifest.get("platforms", []),
+        "tables": manifest.get("tables", {}),
+        "snapshots": snapshots,
+    }
 
 
 @app.get("/api/abook/filters", response_model=FilterOptions)
 def filter_options(repository: ClickHouseRepository = Depends(get_repository)) -> dict[str, list[str]]:
     try:
         return repository.fetch_filter_options()
+    except WarehouseCoverageError as exc:
+        raise _coverage_http_exception(exc) from exc
     except RepositoryConfigurationError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as exc:
@@ -150,7 +198,6 @@ def analysis(request: AnalysisRequest, repository: ClickHouseRepository = Depend
         personal_candidate_logins = personal_candidates.login_ids if personal_candidates_enabled else frozenset()
         news_candidate_logins = news_candidates.login_ids if news_candidates_enabled else frozenset()
         risk_filter = build_local_risk_filter(request)
-        r4_snapshot = build_r4_filter(request)
         martingale_snapshot = build_martingale_filter(request)
         effective_request = risk_filter.apply(request)
         overview_rows = None
@@ -170,11 +217,9 @@ def analysis(request: AnalysisRequest, repository: ClickHouseRepository = Depend
             excluded_logins = risk_filter.excluded_logins
             rows = repository.fetch_analysis(effective_request, excluded_logins=excluded_logins) if excluded_logins else repository.fetch_analysis(effective_request)
         rows = martingale_snapshot.enrich_rows(risk_filter.snapshot.enrich_rows(rows))
-        rows = r4_snapshot.enrich_rows(rows)
         rows = avg_profit_snapshot.enrich_rows(rows)
         if overview_rows is not None:
             overview_rows = martingale_snapshot.enrich_rows(risk_filter.snapshot.enrich_rows(overview_rows))
-            overview_rows = r4_snapshot.enrich_rows(overview_rows)
             overview_rows = avg_profit_snapshot.enrich_rows(overview_rows)
         # Risk SQL exclusions are an optimization for the Abook candidate query.
         # Final routing and company P&L must still classify the full population:
@@ -220,6 +265,8 @@ def analysis(request: AnalysisRequest, repository: ClickHouseRepository = Depend
             min_selection_monthly_consistency=rules.min_selection_monthly_consistency,
             min_positive_month_rate=rules.min_positive_month_rate,
             max_top1_day_profit_contribution=rules.max_top1_day_profit_contribution,
+            min_long_trades_ratio=rules.min_long_trades_ratio,
+            max_long_trades_ratio=rules.max_long_trades_ratio,
             max_daily_profit_month_contribution=rules.max_daily_profit_month_contribution,
             max_leverage_p95_ratio=rules.max_leverage_p95_ratio,
             max_high_leverage_holding_seconds=rules.max_high_leverage_holding_seconds,
@@ -240,14 +287,8 @@ def analysis(request: AnalysisRequest, repository: ClickHouseRepository = Depend
             excluded_martingale_levels=request.rules.excluded_martingale_levels,
             avg_profit_snapshot_status=avg_profit_snapshot.status,
             require_selection_monthly_positive=rules.require_selection_monthly_positive,
-            enable_r4=rules.enable_r4,
-            r4_min_passing_weeks=rules.r4_min_passing_weeks,
         )
         payload["risk_management"] = risk_filter.summary()
-        payload["r4"] = {
-            **r4_snapshot.summary(),
-            "routed_users": sum(1 for account in payload.get("accounts", []) if account.get("r4_pass")),
-        }
         payload["martingale"] = martingale_snapshot.summary(request.rules.excluded_martingale_levels)
         payload["avg_profit"] = avg_profit_snapshot.summary()
         return _store_analysis_session(
@@ -256,6 +297,8 @@ def analysis(request: AnalysisRequest, repository: ClickHouseRepository = Depend
             daily_rows=daily_rows,
             overview_daily_rows=overview_daily_rows,
         )
+    except WarehouseCoverageError as exc:
+        raise _coverage_http_exception(exc) from exc
     except RepositoryConfigurationError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as exc:
@@ -267,14 +310,28 @@ def account_detail(
     platform: str,
     login: int,
     start: str = "2026-05-01",
-    end: str = "2026-07-16",
+    end: str = "2026-07-22",
     selection_start: str = "2026-05-01",
     selection_end: str = "2026-06-30",
+    validation_start: str = "2026-07-01",
+    validation_end: str = "2026-07-22",
     repository: ClickHouseRepository = Depends(get_repository),
 ) -> dict:
     try:
         rows = repository.fetch_account_detail(platform, login, start, end)
         payload = build_account_detail_payload(rows)
+        fetch_direction_summary = getattr(repository, "fetch_account_direction_summary", None)
+        direction_rows = fetch_direction_summary(
+            platform,
+            login,
+            start,
+            end,
+            selection_start,
+            selection_end,
+            validation_start,
+            validation_end,
+        ) if callable(fetch_direction_summary) else []
+        payload["direction_summary"] = build_direction_summary(direction_rows)
         snapshot = load_martingale_snapshot(snapshot_path(), selection_start, selection_end, [platform])
         payload["martingale"] = {
             **snapshot.summary(),
@@ -283,6 +340,8 @@ def account_detail(
         return payload
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except WarehouseCoverageError as exc:
+        raise _coverage_http_exception(exc) from exc
     except RepositoryConfigurationError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as exc:
@@ -355,10 +414,52 @@ def book_analytics(
             "bbook": sum(1 for account in accounts if (str(account["platform"]), int(account["login"])) not in abook_keys),
         }
         return result
+    except WarehouseCoverageError as exc:
+        raise _coverage_http_exception(exc) from exc
     except RepositoryConfigurationError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=502, detail="ClickHouse book analytics query failed") from exc
+
+
+@app.post("/api/abook/direction-analytics")
+def direction_analytics(
+    request: DirectionAnalyticsRequest,
+    repository: ClickHouseRepository = Depends(get_repository),
+) -> dict:
+    try:
+        signature = request_signature(request.analysis)
+        cached_result = direction_analytics_cache.get(signature)
+        if cached_result is not None:
+            return cached_result
+        cached_session = analysis_session_cache.get(
+            request.analysis_token,
+            signature,
+        )
+        if cached_session is None:
+            analysis_payload = analysis(request.analysis, repository)
+            cached_session = analysis_session_cache.get(
+                analysis_payload.get("analysis_token"),
+                signature,
+            )
+            if cached_session is not None:
+                analysis_payload = cached_session.payload
+        else:
+            analysis_payload = cached_session.payload
+        rows = repository.fetch_direction_matched_facts(request.analysis)
+        result = build_direction_analytics_payload(
+            rows,
+            analysis_payload.get("population_accounts") or analysis_payload.get("accounts", []),
+            request.analysis,
+        )
+        direction_analytics_cache.put(signature, result)
+        return result
+    except WarehouseCoverageError as exc:
+        raise _coverage_http_exception(exc) from exc
+    except RepositoryConfigurationError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail="ClickHouse direction analytics query failed") from exc
 
 
 def _export_response(request: AnalysisRequest, repository: ClickHouseRepository) -> StreamingResponse:

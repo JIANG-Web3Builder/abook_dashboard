@@ -1,5 +1,4 @@
 import pytest
-from pydantic import ValidationError
 import importlib
 
 
@@ -10,15 +9,7 @@ def _load_snapshot_refresh():
         pytest.fail(f"snapshot refresh module is not implemented: {exc}")
 
 
-def _load_request_model():
-    models = importlib.import_module("app.models")
-    model = getattr(models, "SnapshotRefreshRequest", None)
-    if model is None:
-        pytest.fail("SnapshotRefreshRequest is not implemented")
-    return model
-
-
-def test_refresh_snapshots_builds_all_four_payloads_with_current_selection(monkeypatch, tmp_path):
+def test_refresh_snapshots_builds_all_three_payloads_with_current_selection(monkeypatch, tmp_path):
     snapshot_refresh = _load_snapshot_refresh()
     calls = []
     monkeypatch.setattr(
@@ -36,16 +27,10 @@ def test_refresh_snapshots_builds_all_four_payloads_with_current_selection(monke
         "martingale_build_snapshot",
         lambda start, end, platforms: calls.append(("martingale", start, end, platforms)) or {"records": [{"login": 1}]},
     )
-    monkeypatch.setattr(
-        snapshot_refresh,
-        "r4_build_snapshot",
-        lambda start, end, platforms: calls.append(("r4", start, end, platforms)) or {"records": [{"login": 1}]},
-    )
     paths = {
         "risk": tmp_path / "risk.json",
         "avg_profit": tmp_path / "avg_profit.json",
         "martingale": tmp_path / "martingale.json",
-        "r4": tmp_path / "r4.json",
     }
     monkeypatch.setattr(snapshot_refresh, "snapshot_paths", lambda: paths)
 
@@ -56,7 +41,6 @@ def test_refresh_snapshots_builds_all_four_payloads_with_current_selection(monke
         ("risk", "2026-05-01", "2026-06-30"),
         ("avg_profit", "2026-05-01", "2026-06-30"),
         ("martingale", "2026-05-01", "2026-06-30"),
-        ("r4", "2026-05-01", "2026-06-30"),
     }
     assert all(path.exists() for path in paths.values())
     assert all(platforms == ["mt4", "mt5", "hh_mt5"] for _, _, _, platforms in calls)
@@ -79,7 +63,6 @@ def test_refresh_snapshots_keeps_existing_files_when_a_builder_fails(monkeypatch
         lambda *args: (_ for _ in ()).throw(RuntimeError("source unavailable")),
     )
     monkeypatch.setattr(snapshot_refresh, "martingale_build_snapshot", lambda *args: {"records": []})
-    monkeypatch.setattr(snapshot_refresh, "r4_build_snapshot", lambda *args: {"records": []})
 
     result = snapshot_refresh.refresh_snapshots("2026-05-01", "2026-06-30", ["mt5"])
 
@@ -88,24 +71,29 @@ def test_refresh_snapshots_keeps_existing_files_when_a_builder_fails(monkeypatch
     assert all(path.read_text() == "old" for path in paths.values())
 
 
-def test_snapshot_refresh_request_rejects_empty_or_unsupported_platforms():
-    SnapshotRefreshRequest = _load_request_model()
-    with pytest.raises(ValidationError):
-        SnapshotRefreshRequest(
-            selection={"start": "2026-05-01", "end": "2026-06-30"},
-            platforms=[],
-        )
-    with pytest.raises(ValidationError):
-        SnapshotRefreshRequest(
-            selection={"start": "2026-05-01", "end": "2026-06-30"},
-            platforms=["other"],
-        )
+def test_refresh_snapshots_stamps_validation_and_warehouse_generation(monkeypatch, tmp_path):
+    snapshot_refresh = _load_snapshot_refresh()
+    paths = {
+        "risk": tmp_path / "risk.json",
+        "avg_profit": tmp_path / "avg_profit.json",
+        "martingale": tmp_path / "martingale.json",
+    }
+    monkeypatch.setattr(snapshot_refresh, "snapshot_paths", lambda: paths)
+    for name in ("risk_build_snapshot", "avg_profit_build_snapshot", "martingale_build_snapshot"):
+        monkeypatch.setattr(snapshot_refresh, name, lambda *args: {"records": []})
 
+    result = snapshot_refresh.refresh_snapshots(
+        "2026-05-01",
+        "2026-06-30",
+        ["mt5"],
+        validation_start="2026-07-01",
+        validation_end="2026-07-23",
+        warehouse_generation="g1",
+    )
 
-def test_snapshot_refresh_request_rejects_reversed_selection_dates():
-    SnapshotRefreshRequest = _load_request_model()
-    with pytest.raises(ValidationError):
-        SnapshotRefreshRequest(
-            selection={"start": "2026-06-30", "end": "2026-05-01"},
-            platforms=["mt5"],
-        )
+    assert result["status"] == "ready"
+    for path in paths.values():
+        payload = __import__("json").loads(path.read_text())
+        assert payload["validation_start"] == "2026-07-01"
+        assert payload["validation_end"] == "2026-07-23"
+        assert payload["warehouse_generation"] == "g1"

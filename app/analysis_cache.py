@@ -50,6 +50,43 @@ class AnalysisSessionCache:
             self._entries.move_to_end(token)
             return session
 
+    def clear(self) -> None:
+        with self._lock:
+            self._entries.clear()
+
+
+class ResultCache:
+    """Small in-process TTL/LRU cache for computed analytics payloads."""
+
+    def __init__(self, *, max_entries: int = 8, ttl_seconds: float = 900.0):
+        self.max_entries = max_entries
+        self.ttl_seconds = ttl_seconds
+        self._entries: OrderedDict[str, tuple[float, Any]] = OrderedDict()
+        self._lock = RLock()
+
+    def put(self, signature: str, value: Any) -> None:
+        with self._lock:
+            self._entries[signature] = (time.monotonic(), value)
+            self._entries.move_to_end(signature)
+            while len(self._entries) > self.max_entries:
+                self._entries.popitem(last=False)
+
+    def get(self, signature: str) -> Any | None:
+        with self._lock:
+            entry = self._entries.get(signature)
+            if entry is None:
+                return None
+            created_at, value = entry
+            if time.monotonic() - created_at > self.ttl_seconds:
+                del self._entries[signature]
+                return None
+            self._entries.move_to_end(signature)
+            return value
+
+    def clear(self) -> None:
+        with self._lock:
+            self._entries.clear()
+
 
 def request_signature(request: Any) -> str:
     payload = request.model_dump(mode="json")
@@ -58,3 +95,4 @@ def request_signature(request: Any) -> str:
 
 
 analysis_session_cache = AnalysisSessionCache()
+direction_analytics_cache = ResultCache()

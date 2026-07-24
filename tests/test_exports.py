@@ -8,7 +8,7 @@ def _account(login: int, book: str, selection_pnl: float, validation_pnl: float,
         "book": book, "selection_source": source, "selection_client_net_pnl": selection_pnl,
         "validation_client_net_pnl": validation_pnl, "validation_status": "loss" if validation_pnl < 0 else "profitable",
         "validation": {"client_net_pnl": validation_pnl, "trade_count": 2, "active_trade_days": 1},
-        "selection": {"client_net_pnl": selection_pnl, "trade_count": 2, "active_trade_days": 1},
+        "selection": {"client_net_pnl": selection_pnl, "trade_count": 2, "active_trade_days": 1, "long_trades_ratio": 0.5},
         "selection_months_positive": selection_pnl > 0,
         "stability": {"tier": "core", "score": 85},
         "selection_flags": [], "martingale_blocked": False,
@@ -43,7 +43,7 @@ def test_funnel_reports_ordered_stages_and_drop_reasons():
     funnel = build_selection_funnel(accounts, eligible_accounts=2)
 
     assert [stage["name"] for stage in funnel["stages"]] == [
-        "eligible", "sample_qualified", "leverage_passed", "non_martingale", "abook",
+        "eligible", "sample_qualified", "direction_balance_passed", "leverage_passed", "non_martingale", "abook",
     ]
     assert funnel["stages"][1]["count"] == 1
     assert funnel["stages"][1]["drop_reasons"]["insufficient_sample"] == 1
