@@ -20,11 +20,8 @@ def test_default_strategy_filters_match_july_tuned_profile_without_monthly_pnl_g
     request = AnalysisRequest()
 
     assert request.rules.min_trades == 75
-    assert request.rules.min_active_days == 0
-    assert request.rules.require_selection_monthly_positive is False
     assert request.rules.min_profit_factor == 1.25
     assert request.rules.min_payoff_ratio == 0.6
-    assert request.rules.min_avg_daily_profit == 0.0
     assert request.selection.start.isoformat() == "2026-05-01"
     assert request.validation.end.isoformat() == "2026-07-22"
     assert request.rules.min_positive_month_rate == 0.5  # legacy field retained but ignored by routing
@@ -43,6 +40,12 @@ def test_default_strategy_filters_match_july_tuned_profile_without_monthly_pnl_g
     assert request.news_candidate_list is False
 
 
+@pytest.mark.parametrize("field", ["min_active_days", "min_avg_profit", "require_selection_monthly_positive"])
+def test_removed_routing_parameters_are_rejected(field):
+    with pytest.raises(ValidationError):
+        AnalysisRequest(rules={field: 1})
+
+
 def test_legacy_peak_leverage_field_still_overrides_new_default_when_sent_alone():
     request = AnalysisRequest(rules={"max_peak_leverage_ratio": 125})
 
@@ -57,11 +60,10 @@ def test_analysis_request_accepts_separate_selection_and_validation_rules():
     request = AnalysisRequest(
         selection={"start": "2026-05-01", "end": "2026-06-30"},
         validation={"start": "2026-07-01", "end": "2026-07-31"},
-        rules={"min_trades": 30, "min_active_days": 8},
+        rules={"min_trades": 30},
     )
 
     assert request.rules.min_trades == 30
-    assert request.rules.min_active_days == 8
 
 
 def test_long_trades_ratio_range_is_configurable_and_ordered():

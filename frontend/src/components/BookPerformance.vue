@@ -325,7 +325,7 @@ async function renderChart() {
   renderRoutingChart(props.analytics)
 }
 
-watch(() => [props.analytics, props.activeTab], renderChart, { deep: true })
+watch(() => [props.analytics, props.activeTab], renderChart, { deep: true, immediate: true })
 onBeforeUnmount(() => {
   instance?.dispose()
   disposeRoutingChart()

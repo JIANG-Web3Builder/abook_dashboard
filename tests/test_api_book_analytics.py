@@ -4,6 +4,7 @@ from app.main import _compact_population_account, app, get_repository
 
 
 def test_book_analytics_endpoint_returns_four_blocks_without_turnover_query(tmp_path, monkeypatch):
+    monkeypatch.setattr("app.main.ensure_local_snapshots_for_request", lambda *args, **kwargs: {"status": "ready", "refreshed": False})
     monkeypatch.setenv("ABOOK_MARTINGALE_SNAPSHOT_PATH", str(tmp_path / "missing.json"))
 
     class FakeRepository:
@@ -51,6 +52,7 @@ def test_population_account_response_keeps_ui_metrics_without_heavy_diagnostics(
 
 
 def test_book_analytics_reuses_overview_analysis_session(tmp_path, monkeypatch):
+    monkeypatch.setattr("app.main.ensure_local_snapshots_for_request", lambda *args, **kwargs: {"status": "ready", "refreshed": False})
     for name in (
         "ABOOK_RISK_SNAPSHOT_PATH",
         "ABOOK_MARTINGALE_SNAPSHOT_PATH",
@@ -91,6 +93,7 @@ def test_book_analytics_reuses_overview_analysis_session(tmp_path, monkeypatch):
 
 
 def test_analysis_defers_daily_pnl_query_until_book_analytics(tmp_path, monkeypatch):
+    monkeypatch.setattr("app.main.ensure_local_snapshots_for_request", lambda *args, **kwargs: {"status": "ready", "refreshed": False})
     for name in (
         "ABOOK_RISK_SNAPSHOT_PATH",
         "ABOOK_MARTINGALE_SNAPSHOT_PATH",
@@ -121,6 +124,7 @@ def test_analysis_defers_daily_pnl_query_until_book_analytics(tmp_path, monkeypa
 
 
 def test_book_analytics_skips_symbol_queries_when_symbols_are_not_requested(tmp_path, monkeypatch):
+    monkeypatch.setattr("app.main.ensure_local_snapshots_for_request", lambda *args, **kwargs: {"status": "ready", "refreshed": False})
     for name in (
         "ABOOK_RISK_SNAPSHOT_PATH",
         "ABOOK_MARTINGALE_SNAPSHOT_PATH",

@@ -67,7 +67,7 @@ def test_analysis_payload_keeps_only_accounts_above_strategy_thresholds():
         "daily_profit_sum": Decimal("20"),
     }]
 
-    result = build_analysis_payload(rows, lookback_months=1, min_profit_factor=1, min_avg_daily_profit=10)
+    result = build_analysis_payload(rows, lookback_months=1, min_profit_factor=1)
 
     assert [account["login"] for account in result["accounts"]] == [1]
     assert result["accounts"][0]["profit_factor"] == 3.0

@@ -1,4 +1,4 @@
-export type Tab = 'overview' | 'users' | 'risk-routing' | 'direction'
+export type Tab = 'overview' | 'users' | 'risk-routing' | 'direction' | 'newcomer'
 
 export interface RequestModel {
   selection: { start: string; end: string }
@@ -69,6 +69,29 @@ export interface DirectionAnalyticsPayload {
   rules?: Record<string, any>
 }
 
+export interface NewcomerAnalyticsPayload {
+  pnl_basis?: string
+  selection?: { start: string; end: string }
+  validation?: { start: string; end: string }
+  counts?: Record<string, number>
+  kpi?: Record<string, number>
+  summary?: Record<string, any>
+  pnl_distribution?: Record<string, Array<Record<string, any>>>
+  cumulative_pnl?: Record<string, Array<Record<string, any>>>
+  top_accounts?: Record<string, { winners?: Array<Record<string, any>>; losers?: Array<Record<string, any>> }>
+  admitted?: Array<Record<string, any>>
+  observe?: Array<Record<string, any>>
+  rejected?: Array<Record<string, any>>
+  rules?: Record<string, any>
+}
+
+export interface NewcomerAccountSensitivity {
+  platform?: string
+  login?: number
+  stats_end?: string
+  points: Array<Record<string, any>>
+}
+
 export interface WarehouseStatus {
   source: string
   status: string
@@ -78,7 +101,15 @@ export interface WarehouseStatus {
   data_start?: string | null
   data_end?: string | null
   platforms?: string[]
-  snapshots?: Record<string, { status: string; warehouse_generation?: string | null }>
+  snapshots?: Record<string, {
+    status: string
+    warehouse_generation?: string | null
+    platforms?: string[]
+    selection_start?: string | null
+    selection_end?: string | null
+    validation_start?: string | null
+    validation_end?: string | null
+  }>
 }
 
 export interface AccountDetailPayload {

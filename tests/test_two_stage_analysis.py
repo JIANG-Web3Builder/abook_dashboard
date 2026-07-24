@@ -115,7 +115,7 @@ def test_selection_funnel_does_not_compare_full_account_dicts_for_membership():
         IdentityDict(selection={"trade_count": 0}, book="bbook"),
     ]
 
-    funnel = build_selection_funnel(accounts, min_trades=1, min_active_days=0)
+    funnel = build_selection_funnel(accounts, min_trades=1)
 
     assert funnel["stages"][1]["count"] == 1
     assert funnel["stages"][1]["drop_reasons"] == {"insufficient_sample": 1}
@@ -187,8 +187,8 @@ def test_two_stage_payload_builds_daily_book_series_and_merges_observation_into_
         rows, daily_rows=daily, overview_daily_rows=daily,
         selection_start="2026-05-01", selection_end="2026-06-30",
         validation_start="2026-07-01", validation_end="2026-07-02",
-        min_trades=0, min_active_days=0, min_profit_factor=1, min_payoff_ratio=0,
-        min_avg_daily_profit=-100, min_positive_month_rate=0,
+        min_trades=0, min_profit_factor=1, min_payoff_ratio=0,
+        min_positive_month_rate=0,
         max_top1_day_profit_contribution=2,
         min_direction_day_rate_lower_bound=0, min_stability_score=0,
     )
@@ -215,8 +215,8 @@ def test_daily_company_line_uses_population_rows_when_effective_rows_are_filtere
         rows, daily_rows=effective_daily, overview_daily_rows=overview_daily,
         selection_start="2026-05-01", selection_end="2026-05-31",
         validation_start="2026-07-01", validation_end="2026-07-02",
-        min_trades=0, min_active_days=0, min_profit_factor=1, min_payoff_ratio=0,
-        min_avg_daily_profit=-100, min_positive_month_rate=0,
+        min_trades=0, min_profit_factor=1, min_payoff_ratio=0,
+        min_positive_month_rate=0,
         max_top1_day_profit_contribution=2,
         min_direction_day_rate_lower_bound=0, min_stability_score=0,
     )
@@ -256,9 +256,7 @@ def test_two_stage_analysis_separates_selection_and_validation_and_keeps_inactiv
         validation_start="2026-07-01",
         validation_end="2026-07-13",
         min_trades=20,
-        min_active_days=5,
         min_profit_factor=1,
-        min_avg_daily_profit=10,
         min_positive_month_rate=0,
         max_top1_day_profit_contribution=1,
         min_direction_day_rate_lower_bound=0,
@@ -313,9 +311,7 @@ def test_two_stage_analysis_reports_transition_precision_lift_and_abook_delta():
         validation_start="2026-07-01",
         validation_end="2026-07-13",
         min_trades=20,
-        min_active_days=5,
         min_profit_factor=1,
-        min_avg_daily_profit=10,
         min_positive_month_rate=0,
         max_top1_day_profit_contribution=1,
         min_direction_day_rate_lower_bound=0,
@@ -387,8 +383,8 @@ def test_two_stage_analysis_requires_win_rate_monthly_consistency_and_risk_conce
         strong + weak_month + oversized,
         selection_start="2026-05-01", selection_end="2026-06-30",
         validation_start="2026-07-01", validation_end="2026-07-13",
-        min_trades=20, min_active_days=5, min_profit_factor=1,
-        min_avg_daily_profit=0, min_win_rate=0.6,
+        min_trades=20, min_profit_factor=1,
+        min_win_rate=0.6,
         min_selection_monthly_consistency=0.5,
         min_positive_month_rate=0, max_top1_day_profit_contribution=0.75,
         min_direction_day_rate_lower_bound=0, min_stability_score=0,
@@ -443,8 +439,8 @@ def test_two_stage_analysis_requires_strict_top1_contribution_and_skips_leverage
         diffuse + exactly_twenty + high_leverage + zero_balance,
         selection_start="2026-05-01", selection_end="2026-06-30",
         validation_start="2026-07-01", validation_end="2026-07-13",
-        min_trades=20, min_active_days=5, min_profit_factor=1,
-        min_avg_daily_profit=0, min_win_rate=0.5,
+        min_trades=20, min_profit_factor=1,
+        min_win_rate=0.5,
         min_selection_monthly_consistency=0.5,
         max_top1_day_profit_contribution=0.2, max_peak_leverage_ratio=5,
         max_high_leverage_holding_seconds=0,
@@ -474,11 +470,9 @@ def test_abook_selection_uses_trade_quality_but_not_active_days_or_removed_quali
         validation_start="2026-07-01",
         validation_end="2026-07-02",
         min_trades=2,
-        min_active_days=99,
         min_win_rate=0,
         min_profit_factor=1,
         min_payoff_ratio=0,
-        min_avg_daily_profit=999,
         min_positive_month_rate=1,
         min_selection_monthly_consistency=1,
         max_top1_day_profit_contribution=2,
@@ -507,25 +501,21 @@ def test_abook_selection_does_not_require_positive_selection_months():
         validation_start="2026-07-01",
         validation_end="2026-07-02",
         min_trades=2,
-        min_active_days=0,
         min_win_rate=0,
         min_profit_factor=1,
         min_payoff_ratio=0,
-        min_avg_daily_profit=-100,
         min_positive_month_rate=0,
         min_selection_monthly_consistency=0,
         max_top1_day_profit_contribution=2,
         max_daily_profit_month_contribution=1,
         min_direction_day_rate_lower_bound=0,
         min_stability_score=0,
-        require_selection_monthly_positive=True,
     )
 
     account = result["accounts"][0]
     assert account["selection"]["client_net_pnl"] > 0
     assert account["selection_months_positive"] is False
     assert account["book"] == "abook"
-    assert result["rules"]["selection_months_positive_required"] is False
     assert "selection_monthly_positive" in result["rules"]["removed_selection_rules"]
     assert "selection_period_client_net_pnl" in result["rules"]["removed_selection_rules"]
 
@@ -581,8 +571,8 @@ def test_two_stage_analysis_allows_short_holding_high_leverage_exception_only():
         short_hold + long_hold,
         selection_start="2026-05-01", selection_end="2026-06-30",
         validation_start="2026-07-01", validation_end="2026-07-13",
-        min_trades=20, min_active_days=5, min_profit_factor=1,
-        min_avg_daily_profit=0, min_win_rate=0.5, min_payoff_ratio=0.8,
+        min_trades=20, min_profit_factor=1,
+        min_win_rate=0.5, min_payoff_ratio=0.8,
         min_selection_monthly_consistency=0, min_positive_month_rate=0,
         max_top1_day_profit_contribution=1, max_peak_leverage_ratio=200,
         max_high_leverage_holding_seconds=300,
@@ -703,8 +693,8 @@ def test_profit_overview_uses_stable_unfiltered_population_rows():
         overview_rows=overview_rows,
         selection_start="2026-05-01", selection_end="2026-06-30",
         validation_start="2026-07-01", validation_end="2026-07-13",
-        min_trades=20, min_active_days=5, min_profit_factor=1,
-        min_avg_daily_profit=0, min_positive_month_rate=0,
+        min_trades=20, min_profit_factor=1,
+        min_positive_month_rate=0,
         max_top1_day_profit_contribution=1,
         min_direction_day_rate_lower_bound=0, min_stability_score=0,
     )
@@ -762,7 +752,7 @@ def test_two_stage_analysis_scores_stability_and_penalizes_one_day_concentration
         rows,
         selection_start="2026-05-01", selection_end="2026-06-30",
         validation_start="2026-07-01", validation_end="2026-07-13",
-        min_trades=20, min_active_days=5,
+        min_trades=20,
     )
 
     accounts = {account["login"]: account for account in result["accounts"]}
@@ -897,8 +887,8 @@ def test_two_stage_analysis_exposes_book_performance_and_finite_payload():
         [profitable, profitable_2, losing, losing_2, zero_variance, zero_variance_2],
         selection_start="2026-05-01", selection_end="2026-06-30",
         validation_start="2026-07-01", validation_end="2026-07-13",
-        min_trades=20, min_active_days=5, min_profit_factor=1,
-        min_avg_daily_profit=9, min_positive_month_rate=0,
+        min_trades=20, min_profit_factor=1,
+        min_positive_month_rate=0,
         max_top1_day_profit_contribution=1, min_direction_day_rate_lower_bound=0,
         min_stability_score=0,
     )
@@ -934,8 +924,8 @@ def test_personal_candidate_list_forces_union_without_duplicate_account_impact()
         personal_candidate_info={"enabled": True, "status": "ready", "unique_logins": 2},
         selection_start="2026-05-01", selection_end="2026-06-30",
         validation_start="2026-07-01", validation_end="2026-07-13",
-        min_trades=20, min_active_days=10, min_profit_factor=1,
-        min_avg_daily_profit=0, min_positive_month_rate=0,
+        min_trades=20, min_profit_factor=1,
+        min_positive_month_rate=0,
         max_top1_day_profit_contribution=1,
         min_direction_day_rate_lower_bound=0, min_stability_score=0,
     )
@@ -966,8 +956,8 @@ def test_news_candidate_list_joins_existing_abook_rules_without_duplicate_accoun
         news_candidate_info={"enabled": True, "status": "ready", "unique_logins": 2},
         selection_start="2026-05-01", selection_end="2026-06-30",
         validation_start="2026-07-01", validation_end="2026-07-13",
-        min_trades=20, min_active_days=10, min_profit_factor=1,
-        min_avg_daily_profit=0, min_positive_month_rate=0,
+        min_trades=20, min_profit_factor=1,
+        min_positive_month_rate=0,
         max_top1_day_profit_contribution=1,
         min_direction_day_rate_lower_bound=0, min_stability_score=0,
     )

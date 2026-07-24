@@ -162,6 +162,14 @@ def test_frontend_combines_risk_and_routing_into_one_book_tab():
     assert "分流质量" in books
 
 
+def test_chart_tabs_render_cached_analytics_when_their_components_mount_again():
+    books = _source("components/BookPerformance.vue")
+    direction = _source("components/DirectionPanel.vue")
+
+    assert "watch(() => [props.analytics, props.activeTab], renderChart, { deep: true, immediate: true })" in books
+    assert "}), { deep: true, immediate: true })" in direction
+
+
 def test_frontend_has_martingale_drawer_and_responsive_sidebar_contract():
     drawer = (FRONTEND / "src" / "components" / "AccountDrawer.vue").read_text()
     css = (FRONTEND / "src" / "style.css").read_text()
@@ -200,7 +208,11 @@ def test_frontend_does_not_expose_remote_refresh_controls():
     assert "刷新全部数据" not in sidebar
     assert "refreshSnapshots" not in api
     assert "refresh-snapshots" not in api
-    assert "refreshing" not in app
+    assert "refreshLocalSnapshots" in api
+    assert "refresh-snapshots" in sidebar
+    assert "snapshotRefreshing" in app
+    assert "snapshotNeedsRefresh" in app
+    assert "重建当前筛选期快照" in sidebar
     assert "应用筛选与验证" in sidebar
 
 
@@ -270,6 +282,32 @@ def test_frontend_exposes_direction_analytics_as_the_fifth_lazy_tab():
     for field in ["pnl_distribution", "cumulative_pnl"]:
         assert field in panel
     assert "personal_candidate" not in panel
+
+
+def test_frontend_exposes_newcomer_rolling_screen_tab():
+    app = _source("App.vue")
+    api = _source("api.ts")
+    types = _source("types.ts")
+    panel = (FRONTEND / "src/components/NewcomerPanel.vue").read_text()
+
+    assert "newcomer" in types
+    assert "新人滚动筛" in app
+    assert "NewcomerPanel" in app
+    assert "runNewcomer" in app
+    assert "newcomerRequest" in app
+    assert "/api/abook/newcomer-analytics" in api
+    assert "/api/abook/newcomer-account" in api
+    assert "运行新人筛选" in panel
+    assert "不会自动查询" in panel
+    assert "个人 as-of" in panel
+    assert "短历史观察" in panel
+    assert "跳过无成交" in panel
+    assert "trades" in panel
+    assert "单用户敏感性" in panel
+    assert "emit('run')" in panel
+    assert "cumulativeChart" in panel
+    assert "distributionChart" in panel
+    assert "入选后 Top" in panel
 
 
 def test_direction_panel_requires_explicit_run_button_dynamic_phase_table_and_sorting():

@@ -96,3 +96,4 @@ def request_signature(request: Any) -> str:
 
 analysis_session_cache = AnalysisSessionCache()
 direction_analytics_cache = ResultCache()
+newcomer_analytics_cache = ResultCache()

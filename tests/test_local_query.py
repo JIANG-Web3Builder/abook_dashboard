@@ -105,6 +105,30 @@ def test_render_local_query_uses_non_partitioned_user_glob(tmp_path):
     assert "ods_mt5_users/*.parquet" in rendered
 
 
+def test_render_local_query_interprets_deal_times_and_bounds_as_utc(tmp_path):
+    query = """
+    SELECT toDate(d.time) AS trade_date,
+           toStartOfMonth(time) AS month_start
+    FROM risk.ods_mt5_deals AS d FINAL
+    WHERE d.time >= {start:DateTime}
+      AND d.time < {end_exclusive:DateTime}
+    """
+
+    rendered = render_local_query(
+        query,
+        {
+            "start": "2026-07-01 00:00:00",
+            "end_exclusive": "2026-07-23 00:00:00",
+        },
+        tmp_path,
+    )
+
+    assert "toDate(toDateTime(d.time, 'UTC'))" in rendered
+    assert "toStartOfMonth(toDateTime(time, 'UTC'))" in rendered
+    assert "toDateTime('2026-07-01 00:00:00', 'UTC')" in rendered
+    assert "toDateTime('2026-07-23 00:00:00', 'UTC')" in rendered
+
+
 def test_local_query_executor_decodes_json_each_row_result(tmp_path):
     executor = LocalQueryExecutor(
         tmp_path,

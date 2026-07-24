@@ -10,19 +10,34 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from .analysis_cache import AnalysisSession, analysis_session_cache, direction_analytics_cache, request_signature
+from .analysis_cache import (
+    AnalysisSession,
+    analysis_session_cache,
+    direction_analytics_cache,
+    newcomer_analytics_cache,
+    request_signature,
+)
 from .martingale import build_martingale_filter, load_martingale_snapshot, snapshot_path
 from .avg_profit import build_avg_profit_filter, snapshot_path as avg_profit_snapshot_path
 from .book_analytics import build_book_analytics
 from .direction_analytics import build_direction_analytics_payload
+from .newcomer_analytics import build_newcomer_account_sensitivity, build_newcomer_analytics_payload
 from .exports import render_abook_csv
-from .models import AnalysisRequest, BookAnalyticsRequest, DirectionAnalyticsRequest, FilterOptions
+from .models import (
+    AnalysisRequest,
+    BookAnalyticsRequest,
+    DirectionAnalyticsRequest,
+    FilterOptions,
+    NewcomerAccountRequest,
+    NewcomerAnalyticsRequest,
+)
 from .personal_candidates import load_news_candidates, load_personal_candidates
 from .config import get_settings
 from .repository import ClickHouseRepository, LocalWarehouseRepository, RepositoryConfigurationError
 from .risk import build_local_risk_filter
 from .risk import snapshot_path as risk_snapshot_path
-from .warehouse import WarehouseCoverageError, load_manifest
+from .snapshot_refresh import ensure_local_snapshots_for_request
+from .warehouse import WarehouseCoverageError, WarehouseError, load_manifest
 from .service import (
     build_account_detail_payload,
     build_analysis_payload,
@@ -158,6 +173,11 @@ def warehouse_status() -> dict:
                 "status": status,
                 "path": str(path),
                 "warehouse_generation": snapshot_generation,
+                "platforms": payload.get("platforms"),
+                "selection_start": payload.get("selection_start"),
+                "selection_end": payload.get("selection_end"),
+                "validation_start": payload.get("validation_start"),
+                "validation_end": payload.get("validation_end"),
             }
         except (OSError, ValueError):
             snapshots[name] = {"status": "invalid", "path": str(path)}
@@ -175,6 +195,29 @@ def warehouse_status() -> dict:
     }
 
 
+@app.post("/api/warehouse/snapshots/refresh")
+def refresh_local_snapshots(request: AnalysisRequest) -> dict:
+    settings = get_settings()
+    if settings.data_source != "local":
+        raise HTTPException(
+            status_code=409,
+            detail="当前数据源为远端，快照重建仅支持本地 Warehouse",
+        )
+    try:
+        result = ensure_local_snapshots_for_request(request, settings=settings)
+    except WarehouseError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    if result.get("status") == "error":
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "code": "snapshot_refresh_failed",
+                "message": str(result.get("error") or "本地快照重建失败"),
+            },
+        )
+    return result
+
+
 @app.get("/api/abook/filters", response_model=FilterOptions)
 def filter_options(repository: ClickHouseRepository = Depends(get_repository)) -> dict[str, list[str]]:
     try:
@@ -190,6 +233,15 @@ def filter_options(repository: ClickHouseRepository = Depends(get_repository)) -
 @app.post("/api/abook/analysis")
 def analysis(request: AnalysisRequest, repository: ClickHouseRepository = Depends(get_repository)) -> dict:
     try:
+        snapshot_refresh = ensure_local_snapshots_for_request(request)
+        if snapshot_refresh.get("status") == "error":
+            raise HTTPException(
+                status_code=502,
+                detail={
+                    "code": "snapshot_refresh_failed",
+                    "message": str(snapshot_refresh.get("error") or "本地快照重建失败"),
+                },
+            )
         personal_candidates = load_personal_candidates()
         news_candidates = load_news_candidates()
         avg_profit_snapshot = build_avg_profit_filter(request)
@@ -230,11 +282,11 @@ def analysis(request: AnalysisRequest, repository: ClickHouseRepository = Depend
                 rows,
                 request.lookback_months,
                 min_profit_factor=request.min_profit_factor if request.min_profit_factor is not None else request.rules.min_profit_factor,
-                min_avg_daily_profit=request.min_avg_daily_profit if request.min_avg_daily_profit is not None else request.rules.min_avg_daily_profit,
             )
             payload["risk_management"] = risk_filter.summary()
             payload["martingale"] = martingale_snapshot.summary(request.rules.excluded_martingale_levels)
             payload["avg_profit"] = avg_profit_snapshot.summary()
+            payload["snapshot_refresh"] = snapshot_refresh
             return _store_analysis_session(
                 request,
                 payload,
@@ -256,12 +308,9 @@ def analysis(request: AnalysisRequest, repository: ClickHouseRepository = Depend
             validation_start=request.validation.start.isoformat(),
             validation_end=request.validation.end.isoformat(),
             min_trades=rules.min_trades,
-            min_active_days=rules.min_active_days,
             min_win_rate=rules.min_win_rate,
             min_profit_factor=rules.min_profit_factor,
             min_payoff_ratio=rules.min_payoff_ratio,
-            min_avg_daily_profit=rules.min_avg_daily_profit,
-            min_avg_profit=rules.min_avg_profit,
             min_selection_monthly_consistency=rules.min_selection_monthly_consistency,
             min_positive_month_rate=rules.min_positive_month_rate,
             max_top1_day_profit_contribution=rules.max_top1_day_profit_contribution,
@@ -286,11 +335,11 @@ def analysis(request: AnalysisRequest, repository: ClickHouseRepository = Depend
             martingale_snapshot=martingale_snapshot,
             excluded_martingale_levels=request.rules.excluded_martingale_levels,
             avg_profit_snapshot_status=avg_profit_snapshot.status,
-            require_selection_monthly_positive=rules.require_selection_monthly_positive,
         )
         payload["risk_management"] = risk_filter.summary()
         payload["martingale"] = martingale_snapshot.summary(request.rules.excluded_martingale_levels)
         payload["avg_profit"] = avg_profit_snapshot.summary()
+        payload["snapshot_refresh"] = snapshot_refresh
         return _store_analysis_session(
             request,
             payload,
@@ -299,6 +348,10 @@ def analysis(request: AnalysisRequest, repository: ClickHouseRepository = Depend
         )
     except WarehouseCoverageError as exc:
         raise _coverage_http_exception(exc) from exc
+    except HTTPException:
+        raise
+    except WarehouseError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     except RepositoryConfigurationError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as exc:
@@ -460,6 +513,103 @@ def direction_analytics(
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=502, detail="ClickHouse direction analytics query failed") from exc
+
+
+def _resolve_analysis_session(analysis_request: AnalysisRequest, analysis_token: str | None, repository: ClickHouseRepository):
+    signature = request_signature(analysis_request)
+    cached_session = analysis_session_cache.get(analysis_token, signature)
+    if cached_session is not None:
+        return signature, cached_session.payload
+    analysis_payload = analysis(analysis_request, repository)
+    cached_session = analysis_session_cache.get(analysis_payload.get("analysis_token"), signature)
+    if cached_session is not None:
+        return signature, cached_session.payload
+    return signature, analysis_payload
+
+
+@app.post("/api/abook/newcomer-analytics")
+def newcomer_analytics(
+    request: NewcomerAnalyticsRequest,
+    repository: ClickHouseRepository = Depends(get_repository),
+) -> dict:
+    try:
+        cache_signature = request_signature(request)
+        cached_result = newcomer_analytics_cache.get(cache_signature)
+        if cached_result is not None:
+            return cached_result
+        _, analysis_payload = _resolve_analysis_session(
+            request.analysis,
+            request.analysis_token,
+            repository,
+        )
+        rows = repository.fetch_newcomer_daily_facts(request.analysis)
+        result = build_newcomer_analytics_payload(
+            analysis_payload.get("population_accounts") or analysis_payload.get("accounts", []),
+            rows,
+            request.analysis,
+            max_active_days=request.max_active_days,
+        )
+        newcomer_analytics_cache.put(cache_signature, result)
+        return result
+    except WarehouseCoverageError as exc:
+        raise _coverage_http_exception(exc) from exc
+    except RepositoryConfigurationError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail="ClickHouse newcomer analytics query failed") from exc
+
+
+@app.post("/api/abook/newcomer-account")
+def newcomer_account(
+    request: NewcomerAccountRequest,
+    repository: ClickHouseRepository = Depends(get_repository),
+) -> dict:
+    try:
+        _, analysis_payload = _resolve_analysis_session(
+            request.analysis,
+            request.analysis_token,
+            repository,
+        )
+        population = analysis_payload.get("population_accounts") or analysis_payload.get("accounts", [])
+        account = next(
+            (
+                item
+                for item in population
+                if str(item.get("platform")) == request.platform and int(item.get("login")) == request.login
+            ),
+            None,
+        )
+        if account is None:
+            raise HTTPException(status_code=404, detail="account not found in analysis population")
+        if account.get("book") == "abook":
+            raise HTTPException(status_code=400, detail="overview Abook accounts are excluded from newcomer tab")
+        filtered = request.analysis.model_copy(deep=True)
+        filtered.filters.logins = [request.login]
+        filtered.platforms = [request.platform]
+        account_days = [
+            row
+            for row in repository.fetch_newcomer_daily_facts(filtered)
+            if str(row.get("platform")) == request.platform and int(row.get("login")) == request.login
+        ]
+        min_trades_values = list(request.min_trades_values)
+        if request.min_trades is not None and request.min_trades not in min_trades_values:
+            min_trades_values = sorted({*min_trades_values, request.min_trades})
+        return build_newcomer_account_sensitivity(
+            account,
+            account_days,
+            request.analysis,
+            min_trades_values=min_trades_values,
+            max_active_days=request.max_active_days,
+            stats_end=request.stats_end,
+        )
+    except HTTPException:
+        raise
+    except WarehouseCoverageError as exc:
+        raise _coverage_http_exception(exc) from exc
+    except RepositoryConfigurationError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail="ClickHouse newcomer account query failed") from exc
 
 
 def _export_response(request: AnalysisRequest, repository: ClickHouseRepository) -> StreamingResponse:

@@ -30,6 +30,7 @@ def _row(month: str, pnl: int) -> dict:
 
 
 def test_analysis_reports_martingale_status_and_blocks_personal_candidate(tmp_path, monkeypatch):
+    monkeypatch.setattr("app.main.ensure_local_snapshots_for_request", lambda *args, **kwargs: {"status": "ready", "refreshed": False})
     snapshot_path = tmp_path / "snapshot.json"
     snapshot_path.write_text(json.dumps({
         "selection_start": "2026-05-01", "selection_end": "2026-06-30",
@@ -71,6 +72,7 @@ def test_analysis_reports_martingale_status_and_blocks_personal_candidate(tmp_pa
 
 
 def test_suspected_martingale_does_not_override_personal_abook_candidate(tmp_path, monkeypatch):
+    monkeypatch.setattr("app.main.ensure_local_snapshots_for_request", lambda *args, **kwargs: {"status": "ready", "refreshed": False})
     snapshot_path = tmp_path / "snapshot.json"
     snapshot_path.write_text(json.dumps({
         "selection_start": "2026-05-01", "selection_end": "2026-06-30",

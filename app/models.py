@@ -30,15 +30,11 @@ class AnalysisRules(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     min_trades: int = Field(default=75, ge=0)
-    # Retained for request compatibility; active trade days no longer gate Abook routing.
-    min_active_days: int = Field(default=0, ge=0)
     min_win_rate: float = Field(default=0.5, ge=0, le=1)
     min_profit_factor: float = Field(default=1.25, ge=0)
     min_payoff_ratio: float = Field(default=0.6, ge=0)
     min_long_trades_ratio: float = Field(default=0.3, ge=0, le=1)
     max_long_trades_ratio: float = Field(default=0.7, ge=0, le=1)
-    min_avg_daily_profit: float = Field(default=0.0, ge=0)
-    min_avg_profit: float = Field(default=0.0, ge=0)
     min_selection_monthly_consistency: float = Field(default=0.0, ge=0, le=1)
     min_positive_month_rate: float = Field(default=0.5, ge=0, le=1)
     max_top1_day_profit_contribution: float = Field(default=0.3, gt=0, le=1)
@@ -54,9 +50,6 @@ class AnalysisRules(BaseModel):
     excluded_martingale_levels: List[Literal["extreme", "high", "medium", "low"]] = Field(
         default_factory=lambda: ["extreme", "high", "medium", "low"]
     )
-    # Retained for old clients; monthly P&L is diagnostic/validation only and
-    # can no longer gate Abook routing.
-    require_selection_monthly_positive: bool = False
     @model_validator(mode="after")
     def sync_legacy_leverage_rule(self) -> "AnalysisRules":
         # Older clients only send max_peak_leverage_ratio. Treat that value as
@@ -93,7 +86,6 @@ class AnalysisRequest(BaseModel):
     end: Optional[date] = None
     lookback_months: Optional[Literal[1, 2, 3]] = None
     min_profit_factor: Optional[float] = Field(default=None, ge=0)
-    min_avg_daily_profit: Optional[float] = None
 
     @field_validator("platforms")
     @classmethod
@@ -108,8 +100,6 @@ class AnalysisRequest(BaseModel):
     def validate_range(self) -> "AnalysisRequest":
         if self.min_profit_factor is not None:
             self.rules.min_profit_factor = self.min_profit_factor
-        if self.min_avg_daily_profit is not None:
-            self.rules.min_avg_daily_profit = self.min_avg_daily_profit
         if self.selection.end >= self.validation.start:
             raise ValueError("selection must end before validation starts")
         return self
@@ -141,3 +131,24 @@ class DirectionAnalyticsRequest(BaseModel):
 
     analysis: AnalysisRequest
     analysis_token: Optional[str] = None
+
+
+class NewcomerAnalyticsRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    analysis: AnalysisRequest
+    analysis_token: Optional[str] = None
+    max_active_days: int = Field(default=60, ge=1, le=365)
+
+
+class NewcomerAccountRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    analysis: AnalysisRequest
+    analysis_token: Optional[str] = None
+    platform: str
+    login: int = Field(ge=0)
+    min_trades: Optional[int] = Field(default=None, ge=1)
+    min_trades_values: List[int] = Field(default_factory=lambda: [75, 100, 200, 500])
+    stats_end: Optional[date] = None
+    max_active_days: int = Field(default=60, ge=1, le=365)

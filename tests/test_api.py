@@ -120,6 +120,77 @@ def test_dashboard_does_not_expose_refresh_endpoint():
     assert response.status_code == 404
 
 
+def test_local_snapshot_refresh_endpoint_delegates_to_shared_ensure(monkeypatch):
+    from app.config import Settings
+
+    settings = Settings(
+        clickhouse_host="",
+        clickhouse_port=8123,
+        clickhouse_database="risk",
+        clickhouse_user="",
+        clickhouse_password="",
+        clickhouse_secure=False,
+        data_source="local",
+    )
+    captured = {}
+
+    def fake_ensure(request, *, settings=None):
+        captured["request"] = request
+        captured["settings"] = settings
+        return {"status": "ready", "refreshed": True, "reason": "selection_window"}
+
+    monkeypatch.setattr("app.main.get_settings", lambda: settings)
+    monkeypatch.setattr("app.main.ensure_local_snapshots_for_request", fake_ensure)
+
+    response = client.post("/api/warehouse/snapshots/refresh", json={})
+
+    assert response.status_code == 200
+    assert response.json()["refreshed"] is True
+    assert captured["request"].selection.start.isoformat() == "2026-05-01"
+    assert captured["settings"] is settings
+
+
+def test_warehouse_status_reports_snapshot_selection_window(tmp_path, monkeypatch):
+    import json
+
+    warehouse_path = tmp_path / "warehouse"
+    warehouse_path.mkdir()
+    (warehouse_path / "manifest.json").write_text(json.dumps({
+        "schema_version": 1,
+        "generation": "g1",
+        "updated_at": "2026-07-24T10:00:00+08:00",
+        "tables": {},
+    }))
+    snapshot_paths = {
+        "ABOOK_RISK_SNAPSHOT_PATH": tmp_path / "risk.json",
+        "ABOOK_AVG_PROFIT_SNAPSHOT_PATH": tmp_path / "avg.json",
+        "ABOOK_MARTINGALE_SNAPSHOT_PATH": tmp_path / "martingale.json",
+    }
+    for path in snapshot_paths.values():
+        path.write_text(json.dumps({
+            "warehouse_generation": "g1",
+            "selection_start": "2026-05-14",
+            "selection_end": "2026-06-30",
+            "validation_start": "2026-07-01",
+            "validation_end": "2026-07-22",
+            "records": [],
+        }))
+    for key, path in snapshot_paths.items():
+        monkeypatch.setenv(key, str(path))
+    monkeypatch.setenv("ABOOK_WAREHOUSE_PATH", str(warehouse_path))
+    from app.config import get_settings
+    get_settings.cache_clear()
+    try:
+        response = client.get("/api/warehouse/status")
+    finally:
+        get_settings.cache_clear()
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["snapshots"]["risk"]["selection_start"] == "2026-05-14"
+    assert body["snapshots"]["risk"]["validation_end"] == "2026-07-22"
+
+
 def test_warehouse_status_is_read_only_and_reports_missing_local_data(tmp_path, monkeypatch):
     monkeypatch.setenv("ABOOK_WAREHOUSE_PATH", str(tmp_path / "warehouse"))
     from app.config import get_settings

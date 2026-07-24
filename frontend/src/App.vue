@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
-import { exportAbook, fetchAccountDetail, fetchAnalysis, fetchBookAnalytics, fetchDirectionAnalytics, fetchWarehouseStatus } from './api'
-import type { AccountDetailPayload, AccountRow, AnalysisPayload, DirectionAnalyticsPayload, RequestModel, Tab, WarehouseStatus } from './types'
+import { computed, onMounted, ref, watch } from 'vue'
+import { exportAbook, fetchAccountDetail, fetchAnalysis, fetchBookAnalytics, fetchDirectionAnalytics, fetchNewcomerAnalytics, fetchWarehouseStatus, refreshLocalSnapshots as refreshLocalSnapshotsApi } from './api'
+import type { AccountDetailPayload, AccountRow, AnalysisPayload, DirectionAnalyticsPayload, NewcomerAnalyticsPayload, RequestModel, Tab, WarehouseStatus } from './types'
 import FilterSidebar from './components/FilterSidebar.vue'
 import KpiCards from './components/KpiCards.vue'
 import SelectionFunnel from './components/SelectionFunnel.vue'
@@ -10,6 +10,7 @@ import AccountsTable from './components/AccountsTable.vue'
 import AccountDrawer from './components/AccountDrawer.vue'
 import BookPerformance from './components/BookPerformance.vue'
 import DirectionPanel from './components/DirectionPanel.vue'
+import NewcomerPanel from './components/NewcomerPanel.vue'
 
 const defaultRules: Record<string, number | string[] | boolean> = {
   min_trades: 75, min_win_rate: 0.5, min_profit_factor: 1.25,
@@ -25,17 +26,22 @@ const request = ref<RequestModel>({
   platforms: ['mt4', 'mt5', 'hh_mt5'], filters: { groups: [], logins: [] }, rules: { ...defaultRules }, personal_candidate_list: false, news_candidate_list: false,
 })
 const directionRequest = ref<RequestModel>(JSON.parse(JSON.stringify(request.value)) as RequestModel)
+const newcomerRequest = ref<RequestModel>(JSON.parse(JSON.stringify(request.value)) as RequestModel)
+const newcomerMaxActiveDays = ref(60)
 const data = ref<AnalysisPayload>({ accounts: [] })
 const activeTab = ref<Tab>('overview')
 const loading = ref(false)
 const bookLoading = ref(false)
 const bookSymbolsLoaded = ref(false)
 const warehouseStatus = ref<WarehouseStatus | null>(null)
+const snapshotRefreshing = ref(false)
 const error = ref('')
 const rulesDirty = ref(false)
 const bookData = ref<any | null>(null)
 const directionData = ref<DirectionAnalyticsPayload | null>(null)
 const directionLoading = ref(false)
+const newcomerData = ref<NewcomerAnalyticsPayload | null>(null)
+const newcomerLoading = ref(false)
 const selectedAccount = ref<AccountRow | null>(null)
 const selectedDirectionAccount = ref<Record<string, any> | null>(null)
 const accountDetail = ref<AccountDetailPayload | null>(null)
@@ -45,18 +51,28 @@ let detailRequestId = 0
 
 async function loadAnalysis(options: { preserveAccount?: boolean } = { preserveAccount: true }) {
   const accountBeforeRefresh = selectedAccount.value
-  loading.value = true; error.value = ''; bookData.value = null; directionData.value = null; selectedDirectionAccount.value = null; bookSymbolsLoaded.value = false
+  loading.value = true; error.value = ''; bookData.value = null; directionData.value = null; newcomerData.value = null; selectedDirectionAccount.value = null; bookSymbolsLoaded.value = false
   if (!options.preserveAccount) {
     closeAccount()
   }
   try {
     data.value = await fetchAnalysis(request.value)
+    try { warehouseStatus.value = await fetchWarehouseStatus() } catch { /* analysis succeeded; retain the last Warehouse status */ }
     if (options.preserveAccount && accountBeforeRefresh) {
       const refreshed = (data.value.accounts || []).find(account => account.platform === accountBeforeRefresh.platform && account.login === accountBeforeRefresh.login)
       if (refreshed) selectedAccount.value = refreshed
     }
     rulesDirty.value = false
   } catch (err) { error.value = err instanceof Error ? err.message : String(err) } finally { loading.value = false }
+}
+async function refreshLocalSnapshots() {
+  snapshotRefreshing.value = true
+  error.value = ''
+  try {
+    await refreshLocalSnapshotsApi(request.value)
+    warehouseStatus.value = await fetchWarehouseStatus()
+    await loadAnalysis({ preserveAccount: false })
+  } catch (err) { error.value = err instanceof Error ? err.message : String(err) } finally { snapshotRefreshing.value = false }
 }
 async function openAccount(account: AccountRow) {
   const appliedDirectionAccount = directionData.value?.accounts?.find(item => item.platform === account.platform && item.login === account.login) || null
@@ -110,6 +126,26 @@ async function runDirection() {
   selectedDirectionAccount.value = null
   await loadDirection()
 }
+async function loadNewcomer() {
+  if (newcomerData.value || newcomerLoading.value || activeTab.value !== 'newcomer') return
+  if (!data.value.analysis_token) {
+    error.value = '请先在总览点击「应用筛选与验证」，再运行新人筛选'
+    return
+  }
+  newcomerLoading.value = true
+  try {
+    newcomerData.value = await fetchNewcomerAnalytics(
+      newcomerRequest.value,
+      data.value.analysis_token,
+      newcomerMaxActiveDays.value,
+    )
+  } catch (err) { error.value = err instanceof Error ? err.message : String(err) } finally { newcomerLoading.value = false }
+}
+async function runNewcomer() {
+  activeTab.value = 'newcomer'
+  newcomerData.value = null
+  await loadNewcomer()
+}
 async function downloadExport() {
   const response = await exportAbook(request.value)
   if (!response.ok) throw new Error(await response.text() || `HTTP ${response.status}`)
@@ -152,7 +188,10 @@ function openDirectionAccount(account: Record<string, any>) {
     selection_flags: [],
   } as AccountRow)
 }
-function selectTab(tab: Tab) { activeTab.value = tab; if (tab !== 'overview' && tab !== 'direction') loadBook() }
+function selectTab(tab: Tab) {
+  activeTab.value = tab
+  if (tab !== 'overview' && tab !== 'direction' && tab !== 'newcomer') loadBook()
+}
 function reset() {
   request.value.rules = { ...defaultRules }
   request.value.personal_candidate_list = false
@@ -160,9 +199,22 @@ function reset() {
   directionRequest.value.rules = { ...defaultRules }
   directionRequest.value.personal_candidate_list = false
   directionRequest.value.news_candidate_list = false
+  newcomerRequest.value.rules = { ...defaultRules }
+  newcomerRequest.value.personal_candidate_list = false
+  newcomerRequest.value.news_candidate_list = false
+  newcomerMaxActiveDays.value = 60
   loadAnalysis()
 }
 watch(() => request.value.rules, () => { rulesDirty.value = true }, { deep: true })
+const snapshotNeedsRefresh = computed(() => {
+  const status = warehouseStatus.value
+  if (!status || status.source !== 'local' || !status.snapshots) return false
+  return Object.values(status.snapshots).some(snapshot => (
+    snapshot.status !== 'ready'
+    || snapshot.selection_start !== request.value.selection.start
+    || snapshot.selection_end !== request.value.selection.end
+  ))
+})
 onMounted(async () => {
   try { warehouseStatus.value = await fetchWarehouseStatus() } catch (err) { error.value = err instanceof Error ? err.message : String(err) }
   await loadAnalysis()
@@ -170,6 +222,7 @@ onMounted(async () => {
 const tabs: Array<{ id: Tab; label: string }> = [
   { id: 'overview', label: '总览' }, { id: 'users', label: '用户结构' },
   { id: 'risk-routing', label: '风险与分流' }, { id: 'direction', label: '多空分向' },
+  { id: 'newcomer', label: '新人滚动筛' },
 ]
 </script>
 
@@ -177,10 +230,11 @@ const tabs: Array<{ id: Tab; label: string }> = [
   <div class="app-shell">
     <header class="topbar"><div><span class="kicker">RISK / A-BOOK ANALYTICS</span><h1>Abook 筛选与 Book 分析</h1><p>筛选期 → 样本外验证 · 用户表现与交易详情</p></div><div class="top-actions"><button class="ghost" @click="downloadExport">导出 Abook CSV</button><span class="status-pill" :class="loading ? 'busy' : 'ready'">{{ loading ? '查询中' : '就绪' }}</span></div></header>
     <div class="layout">
-      <FilterSidebar :request="request" :data="data" :loading="loading" :rules-dirty="rulesDirty" :warehouse-status="warehouseStatus" @apply="loadAnalysis" @reset="reset" />
-      <main class="content" :class="{ 'direction-content': activeTab === 'direction' }"><div v-if="error" class="alert error">{{ error }}</div><nav class="tabs"><button v-for="tab in tabs" :key="tab.id" :class="{ active: activeTab === tab.id }" @click="selectTab(tab.id)">{{ tab.label }}</button></nav>
+      <FilterSidebar :request="request" :data="data" :loading="loading" :rules-dirty="rulesDirty" :warehouse-status="warehouseStatus" :snapshot-needs-refresh="snapshotNeedsRefresh" :snapshot-refreshing="snapshotRefreshing" @apply="loadAnalysis" @refresh-snapshots="refreshLocalSnapshots" @reset="reset" />
+      <main class="content" :class="{ 'direction-content': activeTab === 'direction' || activeTab === 'newcomer' }"><div v-if="error" class="alert error">{{ error }}</div><nav class="tabs"><button v-for="tab in tabs" :key="tab.id" :class="{ active: activeTab === tab.id }" @click="selectTab(tab.id)">{{ tab.label }}</button></nav>
         <template v-if="activeTab === 'overview'"><AbookAnalysis :data="data" @open="openAccount" /><KpiCards :data="data" /><SelectionFunnel :data="data" :rules-dirty="rulesDirty" /><AccountsTable :accounts="data.accounts || []" @open="openAccount" /></template>
         <template v-else-if="activeTab === 'direction'"><DirectionPanel :analytics="directionData" :loading="directionLoading" :request="directionRequest" @open="openDirectionAccount" @export="downloadDirectionExport" @run="runDirection" /></template>
+        <template v-else-if="activeTab === 'newcomer'"><NewcomerPanel :analytics="newcomerData" :loading="newcomerLoading" :request="newcomerRequest" :max-active-days="newcomerMaxActiveDays" :analysis-token="data.analysis_token" @update:max-active-days="newcomerMaxActiveDays = $event" @run="runNewcomer" /></template>
         <template v-else><BookPerformance :analytics="bookData" :loading="bookLoading" :active-tab="activeTab" :request="request" :accounts="data.population_accounts || data.accounts || []" @open="openAccount" /></template>
       </main>
     </div>

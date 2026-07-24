@@ -205,7 +205,7 @@ watch([() => props.analytics, activeBook, activeSet, hideSmallPnl, phase], () =>
   page.value = Math.min(page.value, pageCount.value)
   renderCumulativeCharts()
   renderPnlDistributionCharts()
-}), { deep: true })
+}), { deep: true, immediate: true })
 watch(pageCount, () => { if (page.value > pageCount.value) page.value = pageCount.value })
 onBeforeUnmount(() => {
   disposeCharts(cumulativeInstances)

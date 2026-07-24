@@ -6,8 +6,10 @@ const props = defineProps<{
   loading: boolean
   rulesDirty: boolean
   warehouseStatus: WarehouseStatus | null
+  snapshotNeedsRefresh: boolean
+  snapshotRefreshing: boolean
 }>()
-const emit = defineEmits<{ (event: 'apply'): void; (event: 'reset'): void }>()
+const emit = defineEmits<{ (event: 'apply'): void; (event: 'refresh-snapshots'): void; (event: 'reset'): void }>()
 const martingaleLevels = ['extreme', 'high', 'medium', 'low']
 function selectedMartingaleLevelCount(): number {
   const selected = props.request.rules.excluded_martingale_levels
@@ -37,6 +39,7 @@ function selectedMartingaleLevelCount(): number {
     <div class="action-row">
       <button class="primary" :disabled="loading || !request.platforms.length" @click="emit('apply')">{{ loading ? '正在计算…' : '应用筛选与验证' }}</button>
     </div>
+    <div v-if="snapshotNeedsRefresh" class="status-box warn snapshot-refresh-box"><strong>本地快照与当前筛选期不一致</strong><span>点击“应用筛选与验证”会自动重建，也可以先手动重建当前筛选期快照。</span><button class="ghost compact" :disabled="snapshotRefreshing || loading || !request.platforms.length" @click="emit('refresh-snapshots')">{{ snapshotRefreshing ? '正在重建…' : '重建当前筛选期快照' }}</button></div>
     <div v-if="data.martingale" class="status-box" :class="data.martingale.status === 'ready' ? 'ok' : 'warn'"><strong>{{ data.martingale.message || `马丁过滤：${data.martingale.status}` }}</strong><span>确认拦截 {{ data.martingale.blocked_users ?? 0 }} 人 · confirmed {{ data.martingale.confirmed_users ?? 0 }} 人 · 疑似马丁 {{ data.martingale.suspected_users ?? 0 }} 人</span></div>
     <div v-if="data.martingale?.missing_platforms?.length || data.risk_management?.missing_platforms?.length || data.avg_profit?.missing_platforms?.length" class="status-box warn"><strong>当前平台快照不完整</strong><span>缺少平台：{{ [...new Set([...(data.martingale?.missing_platforms || []), ...(data.risk_management?.missing_platforms || []), ...(data.avg_profit?.missing_platforms || [])])].join('、') }}；请先在终端运行 scripts/refresh_local_data.py。</span></div>
     <div v-if="data.avg_profit" class="status-box" :class="data.avg_profit.status === 'ready' ? 'ok' : 'warn'"><strong>avg_profit 本地快照：{{ data.avg_profit.status }}</strong><span>{{ data.avg_profit.records ?? 0 }} 条用户记录 · CUSTOM 活跃日均值<span v-if="data.avg_profit.source_min"> · {{ data.avg_profit.source_min }}～{{ data.avg_profit.source_max }}</span></span></div>

@@ -1,4 +1,14 @@
-import type { AccountDetailPayload, AccountRow, AnalysisPayload, BookAnalyticsPayload, DirectionAnalyticsPayload, RequestModel, WarehouseStatus } from './types'
+import type {
+  AccountDetailPayload,
+  AccountRow,
+  AnalysisPayload,
+  BookAnalyticsPayload,
+  DirectionAnalyticsPayload,
+  NewcomerAccountSensitivity,
+  NewcomerAnalyticsPayload,
+  RequestModel,
+  WarehouseStatus,
+} from './types'
 
 async function readJsonResponse<T>(response: Response, path: string): Promise<T> {
   const text = await response.text()
@@ -25,6 +35,10 @@ export function fetchAnalysis(request: RequestModel) {
   return postJson<AnalysisPayload>('/api/abook/analysis', request)
 }
 
+export function refreshLocalSnapshots(request: RequestModel) {
+  return postJson<Record<string, any>>('/api/warehouse/snapshots/refresh', request)
+}
+
 export function fetchWarehouseStatus() {
   return fetch('/api/warehouse/status').then(async response => {
     if (!response.ok) throw new Error(await response.text() || `HTTP ${response.status}`)
@@ -38,6 +52,27 @@ export function fetchBookAnalytics(request: RequestModel, accounts: Array<{ plat
 
 export function fetchDirectionAnalytics(request: RequestModel, analysisToken?: string) {
   return postJson<DirectionAnalyticsPayload>('/api/abook/direction-analytics', { analysis: request, analysis_token: analysisToken })
+}
+
+export function fetchNewcomerAnalytics(request: RequestModel, analysisToken?: string, maxActiveDays = 60) {
+  return postJson<NewcomerAnalyticsPayload>('/api/abook/newcomer-analytics', {
+    analysis: request,
+    analysis_token: analysisToken,
+    max_active_days: maxActiveDays,
+  })
+}
+
+export function fetchNewcomerAccount(body: {
+  analysis: RequestModel
+  analysis_token?: string
+  platform: string
+  login: number
+  min_trades?: number
+  min_trades_values?: number[]
+  stats_end?: string
+  max_active_days?: number
+}) {
+  return postJson<NewcomerAccountSensitivity>('/api/abook/newcomer-account', body)
 }
 
 export async function fetchAccountDetail(account: AccountRow, request: RequestModel): Promise<AccountDetailPayload> {

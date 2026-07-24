@@ -4,6 +4,7 @@ from app.main import app, get_repository
 
 
 def test_export_endpoint_returns_utf8_csv_header(tmp_path, monkeypatch):
+    monkeypatch.setattr("app.main.ensure_local_snapshots_for_request", lambda *args, **kwargs: {"status": "ready", "refreshed": False})
     monkeypatch.setenv("ABOOK_MARTINGALE_SNAPSHOT_PATH", str(tmp_path / "missing.json"))
 
     class FakeRepository:

@@ -97,13 +97,13 @@ def test_avg_profit_threshold_does_not_gate_abook_routing():
         [row(1, 120, "05"), row(1, 120, "06"), row(2, 80, "05"), row(2, 80, "06")],
         selection_start="2026-05-01", selection_end="2026-06-30",
         validation_start="2026-07-01", validation_end="2026-07-13",
-        min_trades=0, min_active_days=0, min_profit_factor=0, min_payoff_ratio=0,
-        min_avg_daily_profit=-100, min_positive_month_rate=0, max_top1_day_profit_contribution=2,
-        min_direction_day_rate_lower_bound=0, min_stability_score=0, min_avg_profit=100,
+        min_trades=0, min_profit_factor=0, min_payoff_ratio=0,
+        min_positive_month_rate=0, max_top1_day_profit_contribution=2,
+        min_direction_day_rate_lower_bound=0, min_stability_score=0,
         avg_profit_snapshot_status="ready",
     )
 
     by_login = {account["login"]: account for account in payload["accounts"]}
     assert by_login[1]["book"] == "abook"
     assert by_login[2]["book"] == "abook"
-    assert "min_avg_profit" in payload["rules"]["removed_selection_rules"]
+    assert "min_avg_profit" not in payload["rules"]["removed_selection_rules"]

@@ -32,7 +32,7 @@ def _sql_value(value: Any, type_name: str) -> str:
     if type_name in {"Date", "Date32"}:
         return f"toDate({_sql_string(value)})"
     if type_name.startswith("DateTime"):
-        return f"toDateTime({_sql_string(value)})"
+        return f"toDateTime({_sql_string(value)}, 'UTC')"
     if type_name in {"String", "FixedString"}:
         return _sql_string(value)
     if type_name.startswith("UInt") or type_name.startswith("Int"):
@@ -66,9 +66,9 @@ def render_local_query(query: str, parameters: dict[str, Any], root: Path) -> st
     # epoch seconds (UInt32) in Arrow/Parquet. Normalize Deals time at the
     # local SQL boundary so comparisons with Date and DateTime parameters are
     # type-safe, including Warehouses written by older sync versions.
-    rendered = re.sub(r"\bd\.time\b", "toDateTime(d.time)", rendered)
-    rendered = rendered.replace("toDate(time)", "toDate(toDateTime(time))")
-    rendered = rendered.replace("toStartOfMonth(time)", "toStartOfMonth(toDateTime(time))")
+    rendered = re.sub(r"\bd\.time\b", "toDateTime(d.time, 'UTC')", rendered)
+    rendered = rendered.replace("toDate(time)", "toDate(toDateTime(time, 'UTC'))")
+    rendered = rendered.replace("toStartOfMonth(time)", "toStartOfMonth(toDateTime(time, 'UTC'))")
 
     def replace_parameter(match: re.Match[str]) -> str:
         name, type_name = match.groups()

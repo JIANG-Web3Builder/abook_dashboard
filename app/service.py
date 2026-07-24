@@ -292,7 +292,6 @@ def build_analysis_payload(
     rows: Iterable[dict[str, Any]],
     lookback_months: int,
     min_profit_factor: float = 1.0,
-    min_avg_daily_profit: float = 10.0,
 ) -> dict[str, Any]:
     """Convert account-month query rows into dashboard-ready JSON."""
     materialized = [
@@ -605,7 +604,6 @@ def _stability_assessment(
     selection: dict[str, Any],
     *,
     min_trades: int,
-    min_active_days: int,
     min_win_rate: float,
     min_profit_factor: float,
     min_payoff_ratio: float,
@@ -770,12 +768,9 @@ def classify_accounts(
         validation_start=context.validation_start,
         validation_end=context.validation_end,
         min_trades=rules.min_trades,
-        min_active_days=rules.min_active_days,
         min_win_rate=rules.min_win_rate,
         min_profit_factor=rules.min_profit_factor,
         min_payoff_ratio=rules.min_payoff_ratio,
-        min_avg_daily_profit=rules.min_avg_daily_profit,
-        min_avg_profit=rules.min_avg_profit,
         min_selection_monthly_consistency=rules.min_selection_monthly_consistency,
         min_positive_month_rate=rules.min_positive_month_rate,
         max_top1_day_profit_contribution=rules.max_top1_day_profit_contribution,
@@ -793,7 +788,6 @@ def classify_accounts(
         martingale_snapshot=martingale_snapshot,
         excluded_martingale_levels=rules.excluded_martingale_levels,
         avg_profit_snapshot_status=avg_profit_snapshot_status,
-        require_selection_monthly_positive=rules.require_selection_monthly_positive,
     )
     return payload["accounts"]
 
@@ -1014,7 +1008,6 @@ def build_selection_funnel(
     eligible_accounts: int | None = None,
     *,
     min_trades: int | None = None,
-    min_active_days: int | None = None,
     min_long_trades_ratio: float = 0.3,
     max_long_trades_ratio: float = 0.7,
 ) -> dict[str, Any]:
@@ -1248,12 +1241,9 @@ def build_two_stage_payload(
     validation_start: str,
     validation_end: str,
     min_trades: int = 75,
-    min_active_days: int = 0,
     min_win_rate: float = 0.5,
     min_profit_factor: float = 1.25,
     min_payoff_ratio: float = 0.6,
-    min_avg_daily_profit: float = 0.0,
-    min_avg_profit: float = 0.0,
     min_selection_monthly_consistency: float = 0.0,
     min_positive_month_rate: float = 0.5,
     max_top1_day_profit_contribution: float = 0.3,
@@ -1275,7 +1265,6 @@ def build_two_stage_payload(
     martingale_snapshot: Any | None = None,
     excluded_martingale_levels: Iterable[str] = ("extreme", "high", "medium", "low"),
     avg_profit_snapshot_status: str = "not_loaded",
-    require_selection_monthly_positive: bool = False,
 ) -> dict[str, Any]:
     """Build final Abook/Bbook routing and an independent validation-period readout."""
     if max_peak_leverage_ratio is not None and max_leverage_p95_ratio == 2000.0:
@@ -1364,7 +1353,6 @@ def build_two_stage_payload(
         stability = _stability_assessment(
             selection,
             min_trades=min_trades,
-            min_active_days=min_active_days,
             min_win_rate=min_win_rate,
             min_profit_factor=min_profit_factor,
             min_payoff_ratio=min_payoff_ratio,
@@ -1767,7 +1755,6 @@ def build_two_stage_payload(
         accounts,
         unique_accounts,
         min_trades=min_trades,
-        min_active_days=min_active_days,
         min_long_trades_ratio=min_long_trades_ratio,
         max_long_trades_ratio=max_long_trades_ratio,
     )
@@ -1821,7 +1808,6 @@ def build_two_stage_payload(
         },
         "rules": {
             "min_trades": min_trades,
-            "selection_months_positive_required": False,
             "min_win_rate": min_win_rate,
             "min_profit_factor": min_profit_factor,
             "min_payoff_ratio": min_payoff_ratio,
@@ -1834,16 +1820,15 @@ def build_two_stage_payload(
             "risk_snapshot_status": risk_snapshot_status,
             "min_stability_score": min_stability_score,
             "stability_score_mode": "diagnostic_only",
-            "excluded_martingale_levels": list(excluded_martingale_levels),
-            "removed_selection_rules": [
-                "min_active_days",
-                "min_avg_daily_profit",
+            "diagnostic_only_rules": [
                 "min_positive_month_rate",
                 "min_selection_monthly_consistency",
                 "min_direction_day_rate_lower_bound",
                 "max_daily_profit_month_contribution",
                 "min_stability_score",
-                "min_avg_profit",
+            ],
+            "excluded_martingale_levels": list(excluded_martingale_levels),
+            "removed_selection_rules": [
                 "selection_monthly_positive",
                 "selection_period_client_net_pnl",
             ],
